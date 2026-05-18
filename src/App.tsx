@@ -538,6 +538,7 @@ export default function App() {
       });
       const data = await res.json();
       setAdminStatus(data.message);
+      fetchCoins(); // Refresh to sync
       setTimeout(() => setAdminStatus(null), 3000);
     } catch (err) {
       setAdminStatus("Error updating addresses");
@@ -1016,14 +1017,21 @@ export default function App() {
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => signOut(auth)}
-                  className="w-full mt-8 py-4 bg-red-600/10 border border-red-600/20 text-red-500 font-black uppercase italic rounded-2xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2"
-                >
-                  <LogOut className="w-5 h-5" />
-                  Logout Session
-                </button>
-              </div>
+                  <button 
+                    onClick={() => { setIsProfileModalOpen(false); setShowAdmin(true); }}
+                    className="flex-1 py-4 bg-zinc-800 text-[#FFD700] font-black uppercase italic rounded-2xl hover:bg-zinc-700 transition-all border border-[#FFD700]/30 flex items-center justify-center gap-2"
+                  >
+                    <User className="w-5 h-5" />
+                    Admin Panel
+                  </button>
+                  <button 
+                    onClick={() => { setIsProfileModalOpen(false); signOut(auth); }}
+                    className="flex-1 py-4 bg-red-600/10 border border-red-600/20 text-red-500 font-black uppercase italic rounded-2xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    Logout
+                  </button>
+                </div>
             </motion.div>
           </div>
         )}
@@ -1085,10 +1093,19 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-col md:flex-row gap-6 items-center">
-                    <div className="w-40 h-40 bg-white p-2 rounded-lg shrink-0">
-                      <div className="w-full h-full border-4 border-black flex items-center justify-center text-black font-black text-xs text-center uppercase p-4 italic">
-                        SCAN QR FOR {selectedCoin.symbol}
-                      </div>
+                    <div className="w-40 h-40 bg-white p-2 rounded-lg shrink-0 flex items-center justify-center">
+                      {selectedCoin.address && selectedCoin.address.length > 5 ? (
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(selectedCoin.address)}`} 
+                          alt="QR Code" 
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full"
+                        />
+                      ) : (
+                        <div className="w-full h-full border-4 border-black flex items-center justify-center text-black font-black text-[10px] text-center uppercase p-4 italic">
+                          SET ADDRESS IN ADMIN
+                        </div>
+                      )}
                     </div>
                     <div className="w-full space-y-4">
                       <div className="grid grid-cols-2 gap-4">

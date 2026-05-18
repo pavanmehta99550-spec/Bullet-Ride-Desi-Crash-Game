@@ -1,6 +1,21 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import admin from "firebase-admin";
+import fs from "fs";
+
+// Load Firebase Config for Admin SDK
+const firebaseConfigPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: firebaseConfig.projectId,
+  });
+}
+
+const db = admin.firestore();
 
 async function startServer() {
   const app = express();
@@ -32,6 +47,7 @@ async function startServer() {
   let nextForcedCrash: number | null = null;
   let nextForcedReason: string | null = null;
 
+  // Default coins
   let cryptoCoins = [
     { name: 'Bitcoin', symbol: 'BTC', color: '#F7931A', address: 'bc1qxy2kgdy6jr...789' },
     { name: 'Ethereum', symbol: 'ETH', color: '#627EEA', address: '0x71C765...d897' },
@@ -39,6 +55,17 @@ async function startServer() {
     { name: 'Solana', symbol: 'SOL', color: '#14F195', address: '6x5d...f678' },
     { name: 'Dogecoin', symbol: 'DOGE', color: '#C2A633', address: 'D8vB...m90l' }
   ];
+
+  // Load coins from Firestore on startup
+  try {
+    const configDoc = await db.collection('admin').doc('settings').get();
+    if (configDoc.exists && configDoc.data()?.cryptoCoins) {
+      cryptoCoins = configDoc.data()?.cryptoCoins;
+      console.log("Loaded crypto addresses from Firestore");
+    }
+  } catch (err) {
+    console.error("Failed to load settings from Firestore, using defaults", err);
+  }
 
   let withdrawalRequests: any[] = [];
   let depositRequests: any[] = [];
@@ -48,11 +75,19 @@ async function startServer() {
     res.json(cryptoCoins);
   });
 
-  app.post("/api/admin/set-crypto", (req, res) => {
+  app.post("/api/admin/set-crypto", async (req, res) => {
     const { coins } = req.body;
     if (coins && Array.isArray(coins)) {
       cryptoCoins = coins;
-      res.json({ status: "ok", message: "Crypto addresses updated!" });
+      try {
+        await db.collection('admin').doc('settings').set({ 
+          cryptoCoins: coins,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        res.json({ status: "ok", message: "Crypto addresses saved to Database! ✅" });
+      } catch (err) {
+        res.status(500).json({ error: "Failed to save to Database" });
+      }
     } else {
       res.status(400).json({ error: "Invalid coins data" });
     }
