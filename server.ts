@@ -4,22 +4,42 @@ import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
 import fs from "fs";
 
-// Load Firebase Config for Admin SDK
-const firebaseConfigPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
-const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
-
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  admin.initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
-}
-
-const db = admin.firestore();
-
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Add Health Check early
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  // Load Firebase Config for Admin SDK
+  let firebaseConfig: any = {};
+  try {
+    const firebaseConfigPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(firebaseConfigPath)) {
+      firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+      console.log("Firebase config loaded for Admin SDK");
+    } else {
+      console.warn("firebase-applet-config.json not found, using environment defaults");
+    }
+  } catch (err) {
+    console.error("Failed to load firebase-applet-config.json:", err);
+  }
+
+  // Initialize Firebase Admin
+  if (!admin.apps.length && firebaseConfig.projectId) {
+    try {
+      admin.initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+      console.log("Firebase Admin initialized");
+    } catch (err) {
+      console.error("Firebase Admin initialization failed:", err);
+    }
+  }
+
+  const db = admin.apps.length ? admin.firestore() : null;
 
   // Use JSON parsing middleware
   app.use(express.json());
@@ -58,10 +78,12 @@ async function startServer() {
 
   // Load coins from Firestore on startup
   try {
-    const configDoc = await db.collection('admin').doc('settings').get();
-    if (configDoc.exists && configDoc.data()?.cryptoCoins) {
-      cryptoCoins = configDoc.data()?.cryptoCoins;
-      console.log("Loaded crypto addresses from Firestore");
+    if (db) {
+      const configDoc = await db.collection('admin').doc('settings').get();
+      if (configDoc.exists && configDoc.data()?.cryptoCoins) {
+        cryptoCoins = configDoc.data()?.cryptoCoins;
+        console.log("Loaded crypto addresses from Firestore");
+      }
     }
   } catch (err) {
     console.error("Failed to load settings from Firestore, using defaults", err);
@@ -79,6 +101,9 @@ async function startServer() {
     const { coins } = req.body;
     if (coins && Array.isArray(coins)) {
       cryptoCoins = coins;
+      if (!db) {
+        return res.status(503).json({ error: "Database not initialized" });
+      }
       try {
         await db.collection('admin').doc('settings').set({ 
           cryptoCoins: coins,
@@ -86,6 +111,7 @@ async function startServer() {
         }, { merge: true });
         res.json({ status: "ok", message: "Crypto addresses saved to Database! ✅" });
       } catch (err) {
+        console.error("Firestore save error:", err);
         res.status(500).json({ error: "Failed to save to Database" });
       }
     } else {

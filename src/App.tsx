@@ -58,9 +58,15 @@ export default function App() {
       const res = await fetch('/api/round/start', { method: 'POST' });
       if (res.ok) {
         nextRoundData.current = await res.json();
+        setError(null); // Clear any previous network errors
+      } else {
+        const errText = await res.text();
+        console.error("Prefetch failed with status:", res.status, errText);
+        setError("Network error: Server responded with " + res.status);
       }
     } catch (err) {
       console.error("Prefetch failed", err);
+      setError("Network issue: Cannot reach the game server. Please check your connection.");
     }
   };
 
@@ -73,6 +79,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Load coins failed", err);
+      // Don't set global error for coins, just fallback to defaults is fine on server side
     }
   };
 
