@@ -1,0 +1,6 @@
+{
+  "name": "Bullet Ride: Desi Crash Game",
+  "description": "A desi-themed crash game where players ride a Bullet and try to cash out before the inevitable crash happens, complete with funny Indian context crash reasons.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

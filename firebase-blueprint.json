@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "Stores user balance and profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "walletBalance": { "type": "number", "description": "Available game balance" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "walletBalance"]
+    },
+    "gameResult": {
+      "title": "Game Record",
+      "description": "A single round result for a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "betAmount": { "type": "number" },
+        "multiplier": { "type": "number" },
+        "winAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["win", "loss"] }
+      },
+      "required": ["id", "timestamp", "betAmount", "multiplier", "winAmount", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "Primary user profile"
+    },
+    "/users/{userId}/history/{gameId}": {
+      "schema": "gameResult",
+      "description": "User game history"
+    },
+    "/admins/{userId}": {
+      "schema": { "type": "object", "properties": { "role": { "type": "string" } } },
+      "description": "Admin access control"
+    }
+  }
+}
