@@ -974,7 +974,7 @@ export default function App() {
                   <button onClick={() => setIsProfileModalOpen(false)} className="text-zinc-500 hover:text-white bg-zinc-800/50 p-2 rounded-full">✕</button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 mb-8">
+                <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
                     <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Fuel Balance</p>
                     {balance > 0 ? (
@@ -987,6 +987,11 @@ export default function App() {
                     <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Total Rides</p>
                     <p className="text-2xl font-mono text-white">{history.length}</p>
                   </div>
+                </div>
+
+                <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl mb-8 flex justify-between items-center px-4">
+                   <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Admin Access Key (UID)</p>
+                   <p className="text-[9px] font-mono text-zinc-500 select-all">{user?.uid}</p>
                 </div>
 
                 <div className="space-y-4">
@@ -1024,13 +1029,15 @@ export default function App() {
                   </div>
                 </div>
 
-                  <button 
-                    onClick={() => { setIsProfileModalOpen(false); setShowAdmin(true); }}
-                    className="flex-1 py-4 bg-zinc-800 text-[#FFD700] font-black uppercase italic rounded-2xl hover:bg-zinc-700 transition-all border border-[#FFD700]/30 flex items-center justify-center gap-2"
-                  >
-                    <User className="w-5 h-5" />
-                    Admin Panel
-                  </button>
+                  {user?.uid === "TUMHARI_ADMIN_UID" && (
+                    <button 
+                      onClick={() => { setIsProfileModalOpen(false); setShowAdmin(true); }}
+                      className="flex-1 py-4 bg-zinc-800 text-[#FFD700] font-black uppercase italic rounded-2xl hover:bg-zinc-700 transition-all border border-[#FFD700]/30 flex items-center justify-center gap-2"
+                    >
+                      <User className="w-5 h-5" />
+                      Admin Panel
+                    </button>
+                  )}
                   <button 
                     onClick={() => { setIsProfileModalOpen(false); signOut(auth); }}
                     className="flex-1 py-4 bg-red-600/10 border border-red-600/20 text-red-500 font-black uppercase italic rounded-2xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2"
