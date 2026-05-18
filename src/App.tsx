@@ -873,7 +873,11 @@ export default function App() {
             <div className="flex items-center gap-4">
               <div className="hidden sm:block text-right leading-tight border-r border-zinc-800 pr-6">
                 <p className="text-[10px] uppercase tracking-widest text-[#888]">Fuel Balance</p>
-                <p className="text-xl md:text-2xl font-mono text-[#FFD700]">₹{balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                {balance > 0 ? (
+                  <p className="text-xl md:text-2xl font-mono text-[#FFD700]">₹{balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                ) : (
+                  <p className="text-xs font-black text-red-500 uppercase italic animate-pulse">Low Fuel! Please Deposit</p>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex flex-col items-end">
@@ -965,7 +969,11 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-4 mb-8">
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
                     <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Fuel Balance</p>
-                    <p className="text-2xl font-mono text-[#FFD700]">₹{balance.toLocaleString()}</p>
+                    {balance > 0 ? (
+                      <p className="text-2xl font-mono text-[#FFD700]">₹{balance.toLocaleString()}</p>
+                    ) : (
+                      <p className="text-xs font-bold text-red-500 uppercase italic">Empty Fuel</p>
+                    )}
                   </div>
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
                     <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Total Rides</p>

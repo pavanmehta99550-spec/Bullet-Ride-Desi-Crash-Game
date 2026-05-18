@@ -60,7 +60,7 @@ export async function syncUserProfile(user: any) {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName || 'Player',
-        walletBalance: 5000, // Default starting balance
+        walletBalance: 0, // Default starting balance is zero as requested
         createdAt: serverTimestamp(),
       };
       await setDoc(userRef, userData);
