@@ -1,7 +1,14 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+const firebaseConfig = {
+  apiKey: "AIzaSyAAylk4kI5has8jdwX0ef29vcRkLPoSoNw", // Preserving the existing key as the user provided a placeholder
+  authDomain: "clipnova-f259d.firebaseapp.com",
+  projectId: "clipnova-f259d",
+  storageBucket: "clipnova-f259d.firebasestorage.app",
+  messagingSenderId: "1021594403404",
+  appId: "1:1021594403404:web:86fb96b2e2d93e110b42ca"
+};
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
