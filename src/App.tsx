@@ -672,6 +672,79 @@ export default function App() {
     }
   };
 
+  const handleSetUserBalance = async (userId: string) => {
+    const amountVal = userBalanceInputs[userId];
+    if (amountVal === undefined || amountVal === '') {
+      setAdminStatus("Bhai, balance amount dalo! 💸");
+      setTimeout(() => setAdminStatus(null), 3000);
+      return;
+    }
+    const val = parseFloat(amountVal);
+    if (isNaN(val) || val < 0) {
+      setAdminStatus("Incorrect Amount! Positive number (or 0) dalo. ❌");
+      setTimeout(() => setAdminStatus(null), 3000);
+      return;
+    }
+
+    const selectedSymbol = userCoinSelections[userId] || 'INR';
+
+    try {
+      // SET balance directly
+      const targetBalance = parseFloat(val.toFixed(8));
+      await updateUserBalance(userId, targetBalance, selectedSymbol);
+
+      // Add a customized notification
+      const notificationId = Date.now().toString();
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await setDoc(notificationRef, {
+        id: Date.now(),
+        type: 'deposit_approved',
+        amount: targetBalance,
+        coin: { name: 'Direct Fuel Balance', symbol: selectedSymbol, color: '#FFD700' },
+        userId: userId,
+        timestamp: new Date().toISOString(),
+        message: `Admin has set your balance directly to ${targetBalance} in ${selectedSymbol}! ✅`
+      });
+
+      // Invoke server-side API
+      fetch('/api/admin/user/update-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, amountToAdd: targetBalance, coinSymbol: selectedSymbol })
+      }).catch(err => {
+        console.warn("Non-blocking server webhook balance-update notify:", err);
+      });
+
+      setAdminStatus(`User Fuel Balance SET! ✅ (${selectedSymbol})`);
+      setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
+      fetchAdminUsers();
+      setTimeout(() => setAdminStatus(null), 5000);
+    } catch (err: any) {
+      console.error("Direct client SET failed, trying backend fallback:", err);
+      try {
+        const res = await fetch('/api/admin/user/update-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, amountToAdd: val, coinSymbol: selectedSymbol })
+        });
+        if (res.ok) {
+          setAdminStatus(`User Balance Set Successfully (via API)! ✅`);
+          setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
+          fetchAdminUsers();
+          setTimeout(() => setAdminStatus(null), 5000);
+        } else {
+          const errData = await res.json();
+          setAdminStatus(errData.error || "Set fail ho gaya! ❌");
+          setTimeout(() => setAdminStatus(null), 5000);
+        }
+      } catch (fallbackErr: any) {
+        console.error("Direct balance fallback failed:", fallbackErr);
+        setAdminStatus("Failed to set: " + (err.message || String(err)));
+        setTimeout(() => setAdminStatus(null), 5000);
+      }
+    }
+  };
+
   const handleResetUserBalance = async (userId: string) => {
     if (!window.confirm("Aap is user ka balance ₹0 (zero) karna chahte hain?")) {
       return;
@@ -1305,12 +1378,20 @@ export default function App() {
                                       }))}
                                       className="w-16 bg-zinc-950 border border-zinc-850 px-2 py-1.5 text-xs text-white rounded outline-none focus:border-[#FFD700] font-mono text-center"
                                     />
-                                    <button
-                                      onClick={() => handleAddUserBalance(u.uid)}
-                                      className="bg-[#FFD700] text-black px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-white transition-all whitespace-nowrap active:scale-95"
-                                    >
-                                      ADD FUEL
-                                    </button>
+                                    <div className="flex flex-col gap-2">
+                                      <button
+                                        onClick={() => handleAddUserBalance(u.uid)}
+                                        className="bg-[#FFD700] text-black px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-white transition-all whitespace-nowrap active:scale-95"
+                                      >
+                                        ADD FUEL
+                                      </button>
+                                      <button
+                                        onClick={() => handleSetUserBalance(u.uid)}
+                                        className="bg-red-950 text-red-200 border border-red-800 px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-red-900 transition-all whitespace-nowrap active:scale-95"
+                                      >
+                                        SET FUEL
+                                      </button>
+                                    </div>
                                   </div>
                                 </td>
                               </tr>
