@@ -28,13 +28,16 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      return isSignedIn() && (
+        request.auth.token.email == "pavanmehta99550@gmail.com" ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
     }
 
     // --- Entity Validations ---
 
-    function isValidUser(data) {
-      return data.uid == request.auth.uid 
+    function isValidUser(data, userId) {
+      return data.uid == userId 
         && data.email is string && data.email.size() <= 100
         && data.displayName is string && data.displayName.size() <= 100
         && data.walletBalance is number
@@ -54,15 +57,16 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
       
       allow create: if isOwner(userId)
         && isValidId(userId)
-        && isValidUser(incoming())
+        && isValidUser(incoming(), userId)
         && incoming().keys().hasAll(['uid', 'email', 'displayName', 'walletBalance', 'createdAt'])
         && incoming().keys().size() == 5;
 
       allow update: if (isOwner(userId) || isAdmin())
-        && isValidUser(incoming())
+        && isValidUser(incoming(), userId)
         && incoming().createdAt == existing().createdAt
         && incoming().uid == existing().uid
         && (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['walletBalance', 'displayName', 'updatedAt']))

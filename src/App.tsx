@@ -13,7 +13,7 @@ import {
   signInWithEmailAndPassword, createUserWithEmailAndPassword,
   updateProfile
 } from 'firebase/auth';
-import { collection, query, orderBy, limit, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
 
@@ -41,7 +41,13 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   const [multiplier, setMultiplier] = useState(1.00);
-  const [coins, setCoins] = useState<{name: string, symbol: string, color: string, address: string}[]>([]);
+  const [coins, setCoins] = useState<{name: string, symbol: string, color: string, address: string}[]>([
+    { name: 'Bitcoin', symbol: 'BTC', color: '#F7931A', address: 'bc1qxy2kgdy6jr...789' },
+    { name: 'Ethereum', symbol: 'ETH', color: '#627EEA', address: '0x71C765...d897' },
+    { name: 'Tether', symbol: 'USDT', color: '#26A17B', address: '0x26A17B...e456' },
+    { name: 'Solana', symbol: 'SOL', color: '#14F195', address: '6x5d...f678' },
+    { name: 'Dogecoin', symbol: 'DOGE', color: '#C2A633', address: 'D8vB...m90l' }
+  ]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isCrashed, setIsCrashed] = useState(false);
   const [hasCashedOut, setHasCashedOut] = useState(false);
@@ -57,12 +63,39 @@ export default function App() {
   const [isAutoPlay, setIsAutoPlay] = useState(false);
   const [autoPlayTimer, setAutoPlayTimer] = useState<number | null>(null);
   const [isBetQueued, setIsBetQueued] = useState(false);
+  const [hasActiveBet, setHasActiveBet] = useState(false);
+  
   const autoPlayIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [multiplierPoints, setMultiplierPoints] = useState<{ x: number, y: number }[]>([]);
   const animationRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const nextRoundData = useRef<{ crashPoint: number; crashReason: string } | null>(null);
+
+  // Sync refs to avoid stale closures in core intervals
+  const isAutoPlayRef = useRef(isAutoPlay);
+  const isBetQueuedRef = useRef(isBetQueued);
+  const userRef = useRef(user);
+  const balanceRef = useRef(balance);
+  const betAmountRef = useRef(betAmount);
+  const isPlayingRef = useRef(isPlaying);
+  const isCrashedRef = useRef(isCrashed);
+  const crashPointRef = useRef(crashPoint);
+  const multiplierRef = useRef(multiplier);
+  const hasActiveBetRef = useRef(hasActiveBet);
+  const hasCashedOutRef = useRef(hasCashedOut);
+
+  useEffect(() => { isAutoPlayRef.current = isAutoPlay; }, [isAutoPlay]);
+  useEffect(() => { isBetQueuedRef.current = isBetQueued; }, [isBetQueued]);
+  useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { balanceRef.current = balance; }, [balance]);
+  useEffect(() => { betAmountRef.current = betAmount; }, [betAmount]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { isCrashedRef.current = isCrashed; }, [isCrashed]);
+  useEffect(() => { crashPointRef.current = crashPoint; }, [crashPoint]);
+  useEffect(() => { multiplierRef.current = multiplier; }, [multiplier]);
+  useEffect(() => { hasActiveBetRef.current = hasActiveBet; }, [hasActiveBet]);
+  useEffect(() => { hasCashedOutRef.current = hasCashedOut; }, [hasCashedOut]);
 
   // Pre-fetch next round data
   const prefetchNextRound = async () => {
@@ -79,15 +112,42 @@ export default function App() {
   const fetchCoins = async () => {
     try {
       const data = await safeFetchJson('/api/config/crypto');
-      setCoins(data);
+      if (Array.isArray(data) && data.length > 0) {
+        setCoins(data);
+      }
     } catch (err: any) {
       console.warn("Load coins failed:", err.message || err);
     }
   };
 
+  const startCountdown = () => {
+    if (autoPlayIntervalRef.current) {
+      clearInterval(autoPlayIntervalRef.current);
+      autoPlayIntervalRef.current = null;
+    }
+
+    let count = 5; // Fast 5-second countdown to keep the experience rapid
+    setAutoPlayTimer(count);
+
+    autoPlayIntervalRef.current = setInterval(() => {
+      count -= 1;
+      if (count <= 0) {
+        if (autoPlayIntervalRef.current) {
+          clearInterval(autoPlayIntervalRef.current);
+          autoPlayIntervalRef.current = null;
+        }
+        setAutoPlayTimer(null);
+        startRound(true);
+      } else {
+        setAutoPlayTimer(count);
+      }
+    }, 1000);
+  };
+
   useEffect(() => {
     prefetchNextRound(); // Initial prefetch
     fetchCoins();
+    startCountdown(); // Infinite loop starts right here
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -142,36 +202,18 @@ export default function App() {
   }, [user?.uid]);
 
   const startRound = async (isAutoStart = false) => {
-    if (!user) {
+    // If running manually and user is not logged in, show Auth modal
+    const currentUser = userRef.current;
+    if (!currentUser && !isAutoStart) {
       setShowAuthModal(true);
       return;
     }
+
     if (isPlaying) {
-      if (!hasCashedOut && !isCrashed) {
+      if (hasActiveBet && !hasCashedOut && !isCrashed) {
         cashOut();
       }
       return;
-    }
-
-    // If a timer is running and this is NOT an auto-start, just queue the bet
-    if (autoPlayTimer !== null && !isAutoStart) {
-      if (balance < betAmount) {
-        setError("Bas kar bhai! Balance low hai.");
-        return;
-      }
-      setIsBetQueued(true);
-      return;
-    }
-
-    // If it's an auto-start but we don't have enough balance or didn't queue a bet, 
-    // we might want to skip or just start the visualization anyway?
-    // Usually, in these games, the game runs even if you don't bet.
-    // User goal: "Timing khatm hote hi apane aap game chalu ho".
-    
-    if (balance < betAmount && !hasCashedOut) { 
-        // If they didn't queue and don't have balance, we shouldn't deduct but maybe game still runs?
-        // Let's assume they MUST have a bet to participate in calculations, 
-        // but the visual "riding" starts regardless if requested by user.
     }
 
     if (autoPlayIntervalRef.current) {
@@ -186,16 +228,23 @@ export default function App() {
     setMultiplierPoints([{ x: 0, y: 1 }]);
     setError(null);
     setAutoPlayTimer(null);
-    
-    // Only deduct if bet was queued or if it's a manual start (which we've limited above)
-    if (isBetQueued || !isAutoStart) {
-        const newBalance = balance - betAmount;
-        updateUserBalance(user.uid, newBalance);
-        setWithdrawableBalance(prev => Math.max(0, prev - betAmount));
+
+    // Lock in the bet for this round using the latest ref values
+    const currentBetAmount = betAmountRef.current;
+    const currentBalance = balanceRef.current;
+    const queued = isBetQueuedRef.current;
+    const autoPlayActive = isAutoPlayRef.current;
+
+    if (currentUser && (queued || (autoPlayActive && currentBalance >= currentBetAmount))) {
+      setHasActiveBet(true);
+      const newBalance = currentBalance - currentBetAmount;
+      updateUserBalance(currentUser.uid, newBalance);
+      setWithdrawableBalance(prev => Math.max(0, prev - currentBetAmount));
+      setIsBetQueued(false); // Reset queue
+    } else {
+      setHasActiveBet(false);
     }
-    
-    setIsBetQueued(false); // Reset queue
-    
+
     // Use pre-fetched data or fetch fresh
     if (nextRoundData.current) {
       setCrashPoint(nextRoundData.current.crashPoint);
@@ -212,8 +261,34 @@ export default function App() {
         setIsPlaying(true);
         prefetchNextRound();
       } catch (err: any) {
-        setError("Network Issue: Cannot start the round. Please check your connection and try again.");
-        console.warn("Failed to start round:", err.message || err);
+        console.warn("Express server unavailable, proceeding with local ride simulation.");
+        const rand = Math.random();
+        let localCrashPoint;
+        if (rand < 0.5) {
+          localCrashPoint = 1.00 + (Math.random() * 1.00);
+        } else if (rand < 0.8) {
+          localCrashPoint = 2.00 + (Math.random() * 3.00);
+        } else {
+          localCrashPoint = 5.00 + (Math.random() * 5.00);
+        }
+        const finalCrashPoint = parseFloat(localCrashPoint.toFixed(2));
+        const finalCrashReasons = [
+          "Challan kat gaya 👮‍♂️",
+          "Saand samne aa gaya 🐂",
+          "Pothole me gir gaye 🕳️",
+          "Mama ne pakad liya 🚓",
+          "Petrol khatam ho gaya ⛽",
+          "Tyre puncture ho gaya 📌",
+          "Aage traffic jam hai 🚥",
+          "Raste me JCB ki khudai chal rahi hai 🚜",
+          "Papa ki pari ne takkar maar di 🛴"
+        ];
+        const finalCrashReason = finalCrashReasons[Math.floor(Math.random() * finalCrashReasons.length)];
+        
+        setCrashPoint(finalCrashPoint);
+        setCrashReason(finalCrashReason);
+        setIsPlaying(true);
+        setError(null);
       } finally {
         setLoading(false);
       }
@@ -221,69 +296,88 @@ export default function App() {
   };
 
   const cashOut = () => {
-    if (hasCashedOut || isCrashed || !isPlaying) return;
+    if (hasCashedOut || isCrashed || !isPlaying || !hasActiveBet) return;
     
     // Calculate final win
     const currentMult = multiplier;
-    const winAmount = Math.floor(betAmount * currentMult);
+    const currentBet = betAmountRef.current;
+    const currentBal = balanceRef.current;
+    const winAmount = Math.floor(currentBet * currentMult);
     
     setHasCashedOut(true);
     setCashedOutMultiplier(currentMult);
     
     // Update balances
-    const newBalance = balance + winAmount;
-    updateUserBalance(user.uid, newBalance);
-    // Add only current profit (original stake is already deducted from balance but we add the total returned)
-    setWithdrawableBalance(prev => prev + winAmount);
-    
-    // Save to Firestore History
-    saveGameHistory(user.uid, {
-        betAmount,
-        multiplier: currentMult,
-        winAmount,
-        status: 'win'
-    });
+    const currentUser = userRef.current;
+    if (currentUser) {
+      const newBalance = currentBal + winAmount;
+      updateUserBalance(currentUser.uid, newBalance);
+      // Add only current profit
+      setWithdrawableBalance(prev => prev + winAmount);
+      
+      // Save to Firestore History
+      saveGameHistory(currentUser.uid, {
+          betAmount: currentBet,
+          multiplier: currentMult,
+          winAmount,
+          status: 'win'
+      });
+    }
     
     console.log(`Cashed out at ${currentMult}x for ₹${winAmount}`);
   };
 
   const updateMultiplier = (timestamp: number) => {
-    if (!startTimeRef.current || !crashPoint) return;
+    // If we are no longer playing or already crashed, or if crashPoint is missing, abort frame loop!
+    if (!isPlayingRef.current || isCrashedRef.current || !crashPointRef.current) {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = 0;
+      }
+      return;
+    }
+
+    if (!startTimeRef.current) {
+      startTimeRef.current = timestamp;
+    }
 
     const elapsed = timestamp - startTimeRef.current;
-    // Faster growth curve: reaches ~10x in about 4 seconds (0.0006 instead of 0.00038)
+    // Faster growth curve: reaches ~10x in about 4 seconds
     const currentMultiplier = Math.exp(elapsed * 0.0006);
+    const targetCrash = crashPointRef.current;
 
-    if (currentMultiplier >= crashPoint) {
-      const finalMultiplier = crashPoint;
+    if (currentMultiplier >= targetCrash) {
+      const finalMultiplier = targetCrash;
+      
+      // Stop recursion instantly
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = 0;
+      }
+
       setMultiplier(finalMultiplier);
       setIsCrashed(true);
       setIsPlaying(false);
       
-      // Save Loss to History
-      if (user && !hasCashedOut) {
-        saveGameHistory(user.uid, {
-            betAmount,
+      // Save Loss to History using fresh ref values
+      const currentUser = userRef.current;
+      if (currentUser && hasActiveBetRef.current && !hasCashedOutRef.current) {
+        saveGameHistory(currentUser.uid, {
+            betAmount: betAmountRef.current,
             multiplier: finalMultiplier,
             winAmount: 0,
             status: 'loss'
         });
       }
-      
-      // Auto-restart logic - set to 60 seconds as requested
-      let count = 60;
-      setAutoPlayTimer(count);
-      autoPlayIntervalRef.current = setInterval(() => {
-        count -= 1;
-        if (count <= 0) {
-          if (autoPlayIntervalRef.current) clearInterval(autoPlayIntervalRef.current);
-          startRound(true); // Call as auto-start
-        } else {
-          setAutoPlayTimer(count);
-        }
-      }, 1000);
-      
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+
+      setHasActiveBet(false);
+      setIsBetQueued(false); // Reset queue
+
+      // Brief hold (3 seconds) on crash details, then proceed automatically to countdown
+      setTimeout(() => {
+        setIsCrashed(false);
+        startCountdown();
+      }, 3000);
     } else {
       setMultiplier(currentMultiplier);
       // Update points for the chart - update every frame for max smoothness
@@ -294,16 +388,19 @@ export default function App() {
 
   useEffect(() => {
     if (isPlaying && !isCrashed) {
-      startTimeRef.current = performance.now();
+      startTimeRef.current = 0; // Reset startTime so that the loop recalculates a fresh startTimeRef on the first frame
       animationRef.current = requestAnimationFrame(updateMultiplier);
     }
     return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = 0;
+      }
     };
-  }, [isPlaying]);
+  }, [isPlaying, isCrashed]);
 
   const handleAdjustBet = (type: 'half' | 'double') => {
-    if (isPlaying && !isCrashed) return;
+    if (isPlaying && hasActiveBet && !isCrashed) return;
     setBetAmount(prev => {
       const newVal = type === 'half' ? Math.floor(prev / 2) : prev * 2;
       return Math.max(10, newVal); // Min bet 10
@@ -429,6 +526,113 @@ export default function App() {
   const [adminStatus, setAdminStatus] = useState<string | null>(null);
   const [adminWithdrawals, setAdminWithdrawals] = useState<any[]>([]);
   const [adminDeposits, setAdminDeposits] = useState<any[]>([]);
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [userBalanceInputs, setUserBalanceInputs] = useState<Record<string, string>>({});
+  const [userCoinSelections, setUserCoinSelections] = useState<Record<string, string>>({});
+
+  const fetchAdminUsers = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const list: any[] = [];
+      snap.forEach(doc => {
+        list.push({ ...doc.data(), uid: doc.id });
+      });
+      setAdminUsers(list);
+    } catch (err: any) {
+      console.warn("Direct client-side load users failed, trying api fallback:", err.message || err);
+      try {
+        const data = await safeFetchJson('/api/admin/users');
+        setAdminUsers(Array.isArray(data) ? data : []);
+      } catch (fallbackErr: any) {
+        console.warn("All attempts to load admin users failed:", fallbackErr.message || fallbackErr);
+      }
+    }
+  };
+
+  const handleAddUserBalance = async (userId: string) => {
+    const amountVal = userBalanceInputs[userId];
+    if (!amountVal) {
+      setAdminStatus("Bhai, balance amount dalo! 💸");
+      setTimeout(() => setAdminStatus(null), 3000);
+      return;
+    }
+    const val = parseFloat(amountVal);
+    if (isNaN(val) || val <= 0) {
+      setAdminStatus("Incorrect Amount! Positive number dalo. ❌");
+      setTimeout(() => setAdminStatus(null), 3000);
+      return;
+    }
+
+    const selectedSymbol = userCoinSelections[userId] || 'INR';
+    const selectedCoinObj = selectedSymbol === 'INR'
+      ? { name: 'Direct Fuel Balance', symbol: 'INR', color: '#FFD700' }
+      : (coins.find(c => c.symbol === selectedSymbol) || { name: 'Direct Fuel Balance', symbol: 'INR', color: '#FFD700' });
+
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+      let newBalance = val;
+      if (userDoc.exists()) {
+        const currentBalance = userDoc.data()?.walletBalance || 0;
+        newBalance = currentBalance + val;
+      }
+      
+      await setDoc(userRef, {
+        walletBalance: newBalance,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // Add a customized notification
+      const notificationId = Date.now().toString();
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await setDoc(notificationRef, {
+        id: Date.now(),
+        type: 'deposit_approved',
+        amount: val,
+        coin: { name: selectedCoinObj.name, symbol: selectedCoinObj.symbol, color: selectedCoinObj.color },
+        userId: userId,
+        timestamp: new Date().toISOString(),
+        message: `Admin has added ₹${val} fuel balance directly to your account using ${selectedCoinObj.symbol}! ✅`
+      });
+
+      // Invoke server-side API to sync local lists/variables if applicable
+      fetch('/api/admin/user/update-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, amountToAdd: val, coinSymbol: selectedSymbol })
+      }).catch(err => {
+        console.warn("Non-blocking server webhook balance-update notify:", err);
+      });
+
+      setAdminStatus(`User Fuel Balance Direct Added! ✅ (${selectedCoinObj.symbol})`);
+      setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
+      fetchAdminUsers();
+      setTimeout(() => setAdminStatus(null), 5000);
+    } catch (err: any) {
+      console.error("Direct client update failed, trying backend fallback:", err);
+      try {
+        const res = await fetch('/api/admin/user/update-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, amountToAdd: val, coinSymbol: selectedSymbol })
+        });
+        if (res.ok) {
+          setAdminStatus(`User Balance Updated Successfully (via API)! ✅ (${selectedCoinObj.symbol})`);
+          setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
+          fetchAdminUsers();
+          setTimeout(() => setAdminStatus(null), 5000);
+        } else {
+          const errData = await res.json();
+          setAdminStatus(errData.error || "Update fail ho gaya! ❌");
+          setTimeout(() => setAdminStatus(null), 5000);
+        }
+      } catch (fallbackErr: any) {
+        console.error("Direct balance fallback failed:", fallbackErr);
+        setAdminStatus("Failed to update: " + (err.message || String(err)));
+        setTimeout(() => setAdminStatus(null), 5000);
+      }
+    }
+  };
 
   const fetchAdminWithdrawals = async () => {
     try {
@@ -470,9 +674,13 @@ export default function App() {
 
   useEffect(() => {
     if (isAdminAuthenticated && showAdmin) {
+      fetchAdminWithdrawals();
+      fetchAdminDeposits();
+      fetchAdminUsers();
       const interval = setInterval(() => {
         fetchAdminWithdrawals();
         fetchAdminDeposits();
+        fetchAdminUsers();
       }, 3000);
       return () => clearInterval(interval);
     }
@@ -827,6 +1035,83 @@ export default function App() {
                                 </table>
                             </div>
                         </div>
+                    </div>
+                  </div>
+
+                  {/* Registered Users & Manually Add Fuel Balance Management */}
+                  <div className="mt-8 pt-6 border-t border-zinc-800 space-y-4">
+                    <h4 className="text-[#FFD700] font-bold text-xs uppercase tracking-widest">Registered User Fuel Balance Management</h4>
+                    <div className="bg-black/40 border border-zinc-800 rounded overflow-hidden">
+                      <div className="max-h-80 overflow-y-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-[#111] text-zinc-400 uppercase text-[9px] font-bold border-b border-zinc-800">
+                            <tr>
+                              <th className="p-3">User Details</th>
+                              <th className="p-3">User UID</th>
+                              <th className="p-3">Current Fuel Balance</th>
+                              <th className="p-3 text-right">Add Fuel Balance Details & Coin Selection (₹)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-900">
+                            {adminUsers.map((u) => (
+                              <tr key={u.uid} className="hover:bg-white/5 transition-colors">
+                                <td className="p-3">
+                                  <p className="text-white font-bold">{u.displayName || 'Anonymous Rider'}</p>
+                                  <p className="text-zinc-500 font-mono text-[10px]">{u.email || 'No email linked'}</p>
+                                </td>
+                                <td className="p-3 font-mono text-zinc-500 text-[10px] select-all">
+                                  {u.uid}
+                                </td>
+                                <td className="p-3">
+                                  <span className="text-[#FFD700] font-mono font-bold text-sm">₹{(u.walletBalance || 0).toLocaleString()}</span>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="inline-flex gap-2 items-center">
+                                    <select
+                                      value={userCoinSelections[u.uid] || 'INR'}
+                                      onChange={(e) => setUserCoinSelections(prev => ({
+                                        ...prev,
+                                        [u.uid]: e.target.value
+                                      }))}
+                                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 px-2 py-1.5 text-xs rounded outline-none focus:border-[#FFD700] hover:border-zinc-700 cursor-pointer font-bold font-mono"
+                                    >
+                                      <option value="INR" style={{ color: '#FFD700' }}>INR (Direct)</option>
+                                      {coins.map((coin) => (
+                                        <option key={coin.symbol} value={coin.symbol} style={{ color: coin.color }}>
+                                          {coin.symbol}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <input 
+                                      type="number"
+                                      placeholder="Amount"
+                                      value={userBalanceInputs[u.uid] || ''}
+                                      onChange={(e) => setUserBalanceInputs(prev => ({
+                                        ...prev,
+                                        [u.uid]: e.target.value
+                                      }))}
+                                      className="w-20 bg-zinc-950 border border-zinc-850 px-2 py-1.5 text-xs text-white rounded outline-none focus:border-[#FFD700] font-mono text-center"
+                                    />
+                                    <button
+                                      onClick={() => handleAddUserBalance(u.uid)}
+                                      className="bg-[#FFD700] text-black px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-white transition-all whitespace-nowrap active:scale-95"
+                                    >
+                                      ADD FUEL
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                            {adminUsers.length === 0 && (
+                              <tr>
+                                <td colSpan={4} className="p-8 text-center text-zinc-600 italic text-xs">
+                                  No registered riders found in the database.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
 
@@ -1323,7 +1608,11 @@ export default function App() {
           <h2 className="text-[10px] uppercase tracking-[0.2em] mb-4 text-[#666] font-bold flex items-center gap-2">
             <History className="w-3 h-3" /> Recent Pit Stops
           </h2>
-          <div className="space-y-2 max-h-48 md:max-h-none overflow-y-auto pr-2">
+          <div 
+            className="space-y-2 max-h-52 md:max-h-[360px] overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800"
+            onTouchMove={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
+          >
             <AnimatePresence initial={false}>
               {history.map((item) => (
                 <motion.div 
@@ -1517,7 +1806,7 @@ export default function App() {
               <div className="mt-8 relative h-2 w-64 bg-zinc-800 rounded-full overflow-hidden mx-auto">
                 <motion.div 
                   initial={{ width: '100%' }}
-                  animate={{ width: `${(autoPlayTimer / 60) * 100}%` }}
+                  animate={{ width: `${(autoPlayTimer / 5) * 100}%` }}
                   transition={{ duration: 1, ease: 'linear' }}
                   className="h-full bg-[#FFD700]"
                 />
@@ -1576,7 +1865,7 @@ export default function App() {
                 type="number" 
                 value={betAmount} 
                 onChange={(e) => {
-                  if (isPlaying && !hasCashedOut && !isCrashed) return;
+                  if (isPlaying && hasActiveBet && !isCrashed) return;
                   setBetAmount(parseInt(e.target.value) || 10);
                 }}
                 className="w-full bg-black border-2 border-[#333] p-4 text-2xl font-mono text-white focus:border-[#FFD700] outline-none" 
@@ -1620,20 +1909,64 @@ export default function App() {
 
           <button 
             onClick={() => {
-              if (isPlaying && !hasCashedOut) {
-                cashOut();
+              if (!user) {
+                setShowAuthModal(true);
+                return;
+              }
+              if (isPlaying) {
+                if (hasActiveBet) {
+                  if (!hasCashedOut) {
+                    cashOut();
+                  }
+                } else {
+                  // Spectating, toggle next-round queue
+                  if (isBetQueued) {
+                    setIsBetQueued(false);
+                  } else {
+                    if (balance < betAmount) {
+                      setError("Bas kar bhai! Balance low hai.");
+                      setTimeout(() => setError(null), 3000);
+                      return;
+                    }
+                    setIsBetQueued(true);
+                  }
+                }
               } else {
-                startRound(false); // Manual click
+                // Countdown / Crashed state, toggle queue
+                if (isBetQueued) {
+                  setIsBetQueued(false);
+                } else {
+                  if (balance < betAmount) {
+                    setError("Bas kar bhai! Balance low hai.");
+                    setTimeout(() => setError(null), 3000);
+                    return;
+                  }
+                  setIsBetQueued(true);
+                }
               }
             }}
-            disabled={(isPlaying && hasCashedOut) || loading || (autoPlayTimer !== null && isBetQueued)}
+            disabled={(isPlaying && hasActiveBet && hasCashedOut) || loading}
             className={`mt-auto w-full py-8 transition-all shadow-xl active:translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed group overflow-hidden relative ${
-              isPlaying && !hasCashedOut ? 'bg-red-600 hover:bg-red-500' : 'bg-[#FFD700] hover:bg-white'
+              isPlaying && hasActiveBet && !hasCashedOut 
+                ? 'bg-red-600 hover:bg-red-500' 
+                : isBetQueued 
+                  ? 'bg-amber-600 hover:bg-amber-500 text-white animate-pulse' 
+                  : 'bg-[#FFD700] hover:bg-white text-black'
             }`}
           >
             <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-0 transition-transform duration-500 ease-out" />
-            <span className={`relative text-3xl font-black uppercase tracking-tighter ${isPlaying && !hasCashedOut ? 'text-white' : 'text-black'}`}>
-              {isPlaying && !hasCashedOut ? 'CASH OUT' : (isPlaying && hasCashedOut) ? 'CASHED OUT - PLEASE WAIT' : isBetQueued ? `BET PLACED (WAITING)` : isCrashed ? (autoPlayTimer ? `PLACE NEXT BET` : 'TRY AGAIN') : loading ? 'WAIT...' : `BET ₹${betAmount}`}
+            <span className={`relative text-3xl font-black uppercase tracking-tighter ${
+              isPlaying && hasActiveBet && !hasCashedOut ? 'text-white' : (isBetQueued ? 'text-white' : 'text-black')
+            }`}>
+              {isPlaying && hasActiveBet && !hasCashedOut 
+                ? `CASH OUT` 
+                : (isPlaying && hasActiveBet && hasCashedOut) 
+                  ? 'CASHED OUT' 
+                  : isBetQueued 
+                    ? `CANCEL BET` 
+                    : isPlaying 
+                      ? `BET FOR NEXT RIDE` 
+                      : `BET ₹${betAmount}`}
             </span>
           </button>
           

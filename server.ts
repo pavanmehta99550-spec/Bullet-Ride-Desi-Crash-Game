@@ -76,21 +76,70 @@ async function startServer() {
     { name: 'Dogecoin', symbol: 'DOGE', color: '#C2A633', address: 'D8vB...m90l' }
   ];
 
-  // Load coins from Firestore on startup - Non-blocking
+  let withdrawalRequests: any[] = [];
+  let depositRequests: any[] = [];
+  let userNotifications: any[] = [];
+
+  // Load coins, deposits, withdrawals, and notifications from Firestore on startup - Non-blocking
   if (db) {
     db.collection('admin').doc('settings').get().then(configDoc => {
       if (configDoc.exists && configDoc.data()?.cryptoCoins) {
-        cryptoCoins = configDoc.data()?.cryptoCoins;
-        console.log("Loaded crypto addresses from Firestore");
+        const docCoins = configDoc.data()?.cryptoCoins;
+        if (Array.isArray(docCoins) && docCoins.length > 0) {
+          cryptoCoins = docCoins;
+          console.log("Loaded crypto addresses from Firestore");
+        }
+      } else {
+        // Doc doesn't exist or doesn't have cryptoCoins - seed defaults!
+        db.collection('admin').doc('settings').set({
+          cryptoCoins: cryptoCoins,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true }).then(() => {
+          console.log("Seeded default crypto addresses to Firestore settings doc");
+        }).catch(err => {
+          console.error("Failed to seed default settings in Firestore:", err);
+        });
       }
     }).catch(err => {
       console.error("Failed to load settings from Firestore, using defaults", err);
     });
-  }
 
-  let withdrawalRequests: any[] = [];
-  let depositRequests: any[] = [];
-  let userNotifications: any[] = [];
+    db.collection('deposits').get().then(snap => {
+      const list: any[] = [];
+      snap.forEach(doc => {
+        list.push(doc.data());
+      });
+      list.sort((a, b) => a.id - b.id);
+      depositRequests = list;
+      console.log(`Loaded ${list.length} deposits from Firestore`);
+    }).catch(err => {
+      console.error("Failed to load deposits from Firestore:", err);
+    });
+
+    db.collection('withdrawals').get().then(snap => {
+      const list: any[] = [];
+      snap.forEach(doc => {
+        list.push(doc.data());
+      });
+      list.sort((a, b) => a.id - b.id);
+      withdrawalRequests = list;
+      console.log(`Loaded ${list.length} withdrawals from Firestore`);
+    }).catch(err => {
+      console.error("Failed to load withdrawals from Firestore:", err);
+    });
+
+    db.collection('notifications').get().then(snap => {
+      const list: any[] = [];
+      snap.forEach(doc => {
+        list.push(doc.data());
+      });
+      list.sort((a, b) => a.id - b.id);
+      userNotifications = list;
+      console.log(`Loaded ${list.length} notifications from Firestore`);
+    }).catch(err => {
+      console.error("Failed to load notifications from Firestore:", err);
+    });
+  }
 
   app.get("/api/config/crypto", (req, res) => {
     res.json(cryptoCoins);
@@ -101,7 +150,7 @@ async function startServer() {
     if (coins && Array.isArray(coins)) {
       cryptoCoins = coins;
       if (!db) {
-        return res.status(503).json({ error: "Database not initialized" });
+        return res.json({ status: "ok", message: "Crypto addresses saved in memory! (Database offline) ✅" });
       }
       try {
         await db.collection('admin').doc('settings').set({ 
@@ -111,14 +160,14 @@ async function startServer() {
         res.json({ status: "ok", message: "Crypto addresses saved to Database! ✅" });
       } catch (err) {
         console.error("Firestore save error:", err);
-        res.status(500).json({ error: "Failed to save to Database" });
+        res.json({ status: "ok", message: "Crypto addresses saved in memory! (Database error) ✅" });
       }
     } else {
       res.status(400).json({ error: "Invalid coins data" });
     }
   });
 
-  app.post("/api/deposit/request", (req, res) => {
+  app.post("/api/deposit/request", async (req, res) => {
     const { amount, coin, transactionId, userId } = req.body;
     if (!amount || !coin || !transactionId || !userId) {
       return res.status(400).json({ error: "Missing deposit details" });
@@ -135,6 +184,15 @@ async function startServer() {
     };
 
     depositRequests.push(request);
+
+    if (db) {
+      try {
+        await db.collection('deposits').doc(request.id.toString()).set(request);
+      } catch (err) {
+        console.error("Failed to save deposit request in Firestore:", err);
+      }
+    }
+
     res.json({ status: "ok", message: "Deposit request submitted! Please wait for approval." });
   });
 
@@ -142,10 +200,66 @@ async function startServer() {
     res.json(depositRequests);
   });
 
-  app.post("/api/admin/deposit/approve", (req, res) => {
+  app.post("/api/admin/deposit/approve", async (req, res) => {
     const { requestId } = req.body;
     const request = depositRequests.find(r => r.id === requestId);
     
+    if (db) {
+      try {
+        const depRef = db.collection('deposits').doc(requestId.toString());
+        const depDoc = await depRef.get();
+        if (depDoc.exists) {
+          const depData = depDoc.data();
+          if (depData && depData.status === 'pending') {
+            await depRef.update({ status: 'approved' });
+            
+            // Increment the user's permanent walletBalance in Firestore
+            const userRef = db.collection('users').doc(depData.userId);
+            const userDoc = await userRef.get();
+            if (userDoc.exists) {
+              const currentBalance = userDoc.data()?.walletBalance || 0;
+              const newBalance = currentBalance + depData.amount;
+              await userRef.update({
+                walletBalance: newBalance,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              });
+              console.log(`Incremented Firestore balance for user ${depData.userId} by ₹${depData.amount}`);
+            } else {
+              // If user profile is not synced or pre-created:
+              await userRef.set({
+                uid: depData.userId,
+                walletBalance: depData.amount,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+              }, { merge: true });
+            }
+            
+            const notification = {
+              id: Date.now(),
+              type: 'deposit_approved',
+              amount: depData.amount,
+              coin: depData.coin,
+              userId: depData.userId,
+              timestamp: new Date().toISOString(),
+              message: `Deposit of ₹${depData.amount} via ${depData.coin.symbol} was successful! Balance added.`
+            };
+            await db.collection('notifications').doc(notification.id.toString()).set(notification);
+            
+            // Sync local memory data
+            if (request) request.status = 'approved';
+            depositRequests = depositRequests.map(r => r.id === requestId ? { ...r, status: 'approved' } : r);
+            userNotifications.push(notification);
+
+            return res.json({ status: "ok", message: "Deposit approved!" });
+          } else {
+            return res.status(400).json({ error: "Deposit already processed or not pending" });
+          }
+        }
+      } catch (err) {
+        console.error("Failed in deposit approval Firestore process:", err);
+        return res.status(500).json({ error: "Firestore error during approval" });
+      }
+    }
+
     if (request) {
       request.status = 'approved';
       const notification = {
@@ -164,7 +278,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/withdraw/request", (req, res) => {
+  app.post("/api/withdraw/request", async (req, res) => {
     const { amount, coin, userAddress, userId } = req.body;
     if (!amount || !coin || !userAddress || !userId) {
       return res.status(400).json({ error: "Missing withdrawal details" });
@@ -181,6 +295,15 @@ async function startServer() {
     };
 
     withdrawalRequests.push(request);
+
+    if (db) {
+      try {
+        await db.collection('withdrawals').doc(request.id.toString()).set(request);
+      } catch (err) {
+        console.error("Failed to save withdrawal in Firestore:", err);
+      }
+    }
+
     res.json({ status: "ok", message: "Withdrawal request submitted!" });
   });
 
@@ -188,10 +311,45 @@ async function startServer() {
     res.json(withdrawalRequests);
   });
 
-  app.post("/api/admin/withdraw/approve", (req, res) => {
+  app.post("/api/admin/withdraw/approve", async (req, res) => {
     const { requestId } = req.body;
     const request = withdrawalRequests.find(r => r.id === requestId);
     
+    if (db) {
+      try {
+        const witRef = db.collection('withdrawals').doc(requestId.toString());
+        const witDoc = await witRef.get();
+        if (witDoc.exists) {
+          const witData = witDoc.data();
+          if (witData && witData.status === 'pending') {
+            await witRef.update({ status: 'approved' });
+            
+            const notification = {
+              id: Date.now(),
+              type: 'withdrawal_approved',
+              amount: witData.amount,
+              coin: witData.coin,
+              userId: witData.userId,
+              timestamp: new Date().toISOString(),
+              message: `Withdrawal of ${witData.amount} ${witData.coin.symbol} was successful!`
+            };
+            await db.collection('notifications').doc(notification.id.toString()).set(notification);
+
+            if (request) request.status = 'approved';
+            withdrawalRequests = withdrawalRequests.map(r => r.id === requestId ? { ...r, status: 'approved' } : r);
+            userNotifications.push(notification);
+
+            return res.json({ status: "ok", message: "Withdrawal approved!" });
+          } else {
+            return res.status(400).json({ error: "Withdrawal already processed or not pending" });
+          }
+        }
+      } catch (err) {
+        console.error("Failed in withdrawal approval Firestore process:", err);
+        return res.status(500).json({ error: "Firestore error during approval" });
+      }
+    }
+
     if (request) {
       request.status = 'approved';
       const notification = {
@@ -199,6 +357,7 @@ async function startServer() {
         type: 'withdrawal_approved',
         amount: request.amount,
         coin: request.coin,
+        userId: request.userId,
         timestamp: new Date().toISOString(),
         message: `Withdrawal of ${request.amount} ${request.coin.symbol} was successful!`
       };
@@ -211,8 +370,92 @@ async function startServer() {
 
   app.get("/api/user/notifications", (req, res) => {
     res.json(userNotifications);
-    // Optional: Clear notifications after fetching?
-    // userNotifications = [];
+  });
+
+  // Fetch all registered users in Firestore (Admin only)
+  app.get("/api/admin/users", async (req, res) => {
+    if (!db) {
+      return res.json([]);
+    }
+    try {
+      const snap = await db.collection("users").get();
+      const list: any[] = [];
+      snap.forEach(doc => {
+        list.push({ ...doc.data(), uid: doc.id });
+      });
+      res.json(list);
+    } catch (err: any) {
+      console.error("Failed to list users:", err);
+      res.status(500).json({ error: "Failed to load users from Firestore" });
+    }
+  });
+
+  // Manually add balance to a specific user (Admin only)
+  app.post("/api/admin/user/update-balance", async (req, res) => {
+    const { userId, amountToAdd, coinSymbol } = req.body;
+    if (!userId || amountToAdd === undefined) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+    const val = parseFloat(amountToAdd);
+    if (isNaN(val)) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    if (db) {
+      try {
+        const userRef = db.collection("users").doc(userId);
+        const userDoc = await userRef.get();
+        let newBalance = val;
+        if (userDoc.exists) {
+          const currentBalance = userDoc.data()?.walletBalance || 0;
+          newBalance = currentBalance + val;
+          await userRef.update({
+            walletBalance: newBalance,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        } else {
+          await userRef.set({
+            uid: userId,
+            walletBalance: val,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+
+        const coinDetails: Record<string, {name: string, color: string}> = {
+          'BTC': { name: 'Bitcoin', color: '#F7931A' },
+          'ETH': { name: 'Ethereum', color: '#627EEA' },
+          'USDT': { name: 'Tether', color: '#26A17B' },
+          'SOL': { name: 'Solana', color: '#14F195' },
+          'DOGE': { name: 'Dogecoin', color: '#C2A633' },
+          'INR': { name: 'Direct Fuel Balance', color: '#FFD700' }
+        };
+
+        const targetCoin = coinSymbol && coinDetails[coinSymbol] 
+          ? { name: coinDetails[coinSymbol].name, symbol: coinSymbol, color: coinDetails[coinSymbol].color }
+          : { name: 'Direct Fuel Balance', symbol: 'INR', color: '#FFD700' };
+
+        // Push real-time deposit approval notification to trigger auto-balance update in User UI
+        const notification = {
+          id: Date.now(),
+          type: 'deposit_approved',
+          amount: val,
+          coin: targetCoin,
+          userId: userId,
+          timestamp: new Date().toISOString(),
+          message: `Admin has added ₹${val} fuel balance directly to your account using ${targetCoin.symbol}! ✅`
+        };
+        await db.collection('notifications').doc(notification.id.toString()).set(notification);
+        userNotifications.push(notification);
+
+        console.log(`Successfully added ₹${val} balance to user ${userId} using ${targetCoin.symbol}`);
+        res.json({ status: "ok", message: `Directly added ₹${val} to user's wallet using ${targetCoin.symbol}!` });
+      } catch (err) {
+        console.error("Direct balance addition failed:", err);
+        res.status(500).json({ error: "Database transaction failed" });
+      }
+    } else {
+      res.status(503).json({ error: "Firestore is not active" });
+    }
   });
 
   app.post("/api/admin/set-crash", (req, res) => {
