@@ -273,13 +273,11 @@ export default function App() {
     // Use pre-fetched data or fetch fresh
     if (nextRoundData.current) {
       const { crashPoint, crashReason, isOverride } = nextRoundData.current;
+      
+      // Update refs directly to avoid state race condition
+      crashPointRef.current = crashPoint;
       setCrashPoint(crashPoint);
       setCrashReason(crashReason);
-      
-      if (isOverride) {
-        // Consume the override on the server
-        await fetch('/api/admin/consume-override', { method: 'POST' }).catch(console.error);
-      }
       
       nextRoundData.current = null;
       setIsPlaying(true);
@@ -288,8 +286,12 @@ export default function App() {
       setLoading(true);
       try {
         const data = await safeFetchJson('/api/round/start', { method: 'POST' });
+        
+        // Update refs directly
+        crashPointRef.current = data.crashPoint;
         setCrashPoint(data.crashPoint);
         setCrashReason(data.crashReason);
+        
         setIsPlaying(true);
         prefetchNextRound();
       } catch (err: any) {
@@ -1030,6 +1032,18 @@ export default function App() {
     }
   };
 
+  const clearAdminOverride = async () => {
+    try {
+      await fetch('/api/admin/consume-override', { method: 'POST' });
+      setAdminStatus("Physics Override cleared! ✅");
+      setTimeout(() => setAdminStatus(null), 3000);
+      prefetchNextRound();
+    } catch (err: any) {
+      setAdminStatus("Error clearing override");
+      console.warn("Error clearing override:", err.message || err);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="flex flex-col min-h-screen w-full bg-[#0F0F0F] items-center justify-center space-y-4">
@@ -1438,6 +1452,12 @@ export default function App() {
                       className="bg-[#FFD700] text-black font-black py-4 px-10 uppercase italic hover:bg-white transition-colors"
                     >
                       Apply Physics Override
+                    </button>
+                    <button 
+                      onClick={clearAdminOverride}
+                      className="bg-zinc-700 text-white font-black py-4 px-10 uppercase italic hover:bg-zinc-600 transition-colors"
+                    >
+                      Clear Override
                     </button>
                     {adminStatus && (
                       <p className="text-green-500 font-bold animate-pulse text-sm">{(adminStatus as string)}</p>
