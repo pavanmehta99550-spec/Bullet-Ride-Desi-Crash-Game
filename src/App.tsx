@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldAlert, RefreshCw, Bike, Gauge, User, History, 
-  ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2 
+  ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2, X 
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
@@ -442,6 +442,10 @@ export default function App() {
       const newVal = type === 'half' ? Math.floor(prev / 2) : prev * 2;
       return Math.max(10, newVal); // Min bet 10
     });
+  };
+
+  const removeNotification = (id: number) => {
+    setUserNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   const [adminPasscode, setAdminPasscode] = useState(() => localStorage.getItem('rider_admin_pin') || '350');
@@ -1857,8 +1861,14 @@ export default function App() {
                     initial={{ x: 300, opacity: 0 }}
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: 300, opacity: 0 }}
-                    className={`bg-[#1A1A1A] border-l-4 ${borderColor} p-4 shadow-2xl pointer-events-auto`}
+                    className={`bg-[#1A1A1A] border-l-4 ${borderColor} p-4 shadow-2xl pointer-events-auto relative`}
                 >
+                    <button 
+                        onClick={() => removeNotification(notif.id)}
+                        className="absolute top-2 right-2 text-zinc-500 hover:text-white"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
                     <div className="flex justify-between items-start mb-1">
                         <span className={`font-black text-[10px] uppercase italic tracking-widest ${titleColor}`}>
                           {titleText}
