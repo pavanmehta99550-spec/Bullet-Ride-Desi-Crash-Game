@@ -223,6 +223,7 @@ export default function App() {
         multiplier: doc.data().multiplier,
         time: new Date(doc.data().timestamp?.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }));
+      console.log("New history data:", historyData);
       setHistory(historyData);
     });
     return () => unsub();
