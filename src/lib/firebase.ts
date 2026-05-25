@@ -80,11 +80,26 @@ export async function syncUserProfile(user: any) {
   }
 }
 
-export async function updateUserBalance(userId: string, newBalance: number) {
+export async function updateUserBalance(userId: string, newBalance: number, activeCoin: string = 'INR') {
   const userRef = doc(db, 'users', userId);
   try {
+    const userDoc = await getDoc(userRef);
+    let coinBalances: Record<string, number> = { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 };
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      if (data?.coinBalances) {
+        coinBalances = { ...coinBalances, ...data.coinBalances };
+      } else if (data?.walletBalance !== undefined) {
+        coinBalances.INR = data.walletBalance || 0;
+      }
+    }
+    
+    coinBalances[activeCoin] = parseFloat(newBalance.toFixed(8));
+
     await setDoc(userRef, { 
       walletBalance: newBalance,
+      coinBalances,
+      activeCoin,
       updatedAt: serverTimestamp()
     }, { merge: true });
   } catch (error) {

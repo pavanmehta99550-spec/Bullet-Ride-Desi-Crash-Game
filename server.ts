@@ -216,22 +216,33 @@ async function startServer() {
             // Increment the user's permanent walletBalance in Firestore
             const userRef = db.collection('users').doc(depData.userId);
             const userDoc = await userRef.get();
+            
+            const coinSymbol = depData && depData.coin 
+              ? (typeof depData.coin === 'string' ? depData.coin : (depData.coin.symbol || "INR"))
+              : "INR";
+
+            let coinBalances: Record<string, number> = { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 };
             if (userDoc.exists) {
-              const currentBalance = userDoc.data()?.walletBalance || 0;
-              const newBalance = currentBalance + depData.amount;
-              await userRef.update({
-                walletBalance: newBalance,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-              });
-              console.log(`Incremented Firestore balance for user ${depData.userId} by ₹${depData.amount}`);
-            } else {
-              // If user profile is not synced or pre-created:
-              await userRef.set({
-                uid: depData.userId,
-                walletBalance: depData.amount,
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
-              }, { merge: true });
+              const data = userDoc.data();
+              if (data?.coinBalances) {
+                coinBalances = { ...coinBalances, ...data.coinBalances };
+              } else if (data?.walletBalance !== undefined) {
+                coinBalances.INR = data.walletBalance || 0;
+              }
             }
+
+            const currentSymbolBalance = coinBalances[coinSymbol] || 0;
+            coinBalances[coinSymbol] = parseFloat((currentSymbolBalance + depData.amount).toFixed(8));
+
+            await userRef.set({
+              uid: depData.userId,
+              walletBalance: coinBalances[coinSymbol],
+              coinBalances: coinBalances,
+              activeCoin: coinSymbol,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            console.log(`Incremented Firestore balance for user ${depData.userId} by ${depData.amount} ${coinSymbol}`);
             
             const notification = {
               id: Date.now(),
@@ -405,21 +416,28 @@ async function startServer() {
       try {
         const userRef = db.collection("users").doc(userId);
         const userDoc = await userRef.get();
-        let newBalance = val;
+        
+        let coinBalances: Record<string, number> = { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 };
         if (userDoc.exists) {
-          const currentBalance = userDoc.data()?.walletBalance || 0;
-          newBalance = currentBalance + val;
-          await userRef.update({
-            walletBalance: newBalance,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-        } else {
-          await userRef.set({
-            uid: userId,
-            walletBalance: val,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
+          const data = userDoc.data();
+          if (data?.coinBalances) {
+            coinBalances = { ...coinBalances, ...data.coinBalances };
+          } else if (data?.walletBalance !== undefined) {
+            coinBalances.INR = data.walletBalance || 0;
+          }
         }
+
+        const symbol = coinSymbol || "INR";
+        const currentSymbolBalance = coinBalances[symbol] || 0;
+        coinBalances[symbol] = parseFloat((currentSymbolBalance + val).toFixed(8));
+
+        await userRef.set({
+          uid: userId,
+          walletBalance: coinBalances[symbol],
+          coinBalances: coinBalances,
+          activeCoin: symbol,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
 
         const coinDetails: Record<string, {name: string, color: string}> = {
           'BTC': { name: 'Bitcoin', color: '#F7931A' },
@@ -442,13 +460,13 @@ async function startServer() {
           coin: targetCoin,
           userId: userId,
           timestamp: new Date().toISOString(),
-          message: `Admin has added ₹${val} fuel balance directly to your account using ${targetCoin.symbol}! ✅`
+          message: `Admin has added ${val} balance directly to your account using ${targetCoin.symbol}! ✅`
         };
         await db.collection('notifications').doc(notification.id.toString()).set(notification);
         userNotifications.push(notification);
 
         console.log(`Successfully added ₹${val} balance to user ${userId} using ${targetCoin.symbol}`);
-        res.json({ status: "ok", message: `Directly added ₹${val} to user's wallet using ${targetCoin.symbol}!` });
+        res.json({ status: "ok", message: `Directly added ${val} to user's wallet using ${targetCoin.symbol}!` });
       } catch (err) {
         console.error("Direct balance addition failed:", err);
         res.status(500).json({ error: "Database transaction failed" });
@@ -468,8 +486,19 @@ async function startServer() {
     if (db) {
       try {
         const userRef = db.collection("users").doc(userId);
+        const resetBalances = {
+          INR: 0,
+          BTC: 0,
+          ETH: 0,
+          USDT: 0,
+          SOL: 0,
+          DOGE: 0
+        };
+
         await userRef.update({
           walletBalance: 0,
+          coinBalances: resetBalances,
+          activeCoin: 'INR',
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 

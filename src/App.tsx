@@ -59,6 +59,8 @@ export default function App() {
   const [history, setHistory] = useState<GameHistory[]>([]);
   const [betAmount, setBetAmount] = useState(500);
   const [balance, setBalance] = useState(0);
+  const [activeCoin, setActiveCoin] = useState<string>('INR');
+  const [coinBalances, setCoinBalances] = useState<Record<string, number>>({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
   const [withdrawableBalance, setWithdrawableBalance] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isAutoPlay, setIsAutoPlay] = useState(false);
@@ -156,12 +158,27 @@ export default function App() {
         setUser({ ...firebaseUser, ...profile });
         if (profile) {
           const profileData = profile as any;
-          setBalance(profileData.walletBalance || 0);
+          const curActiveCoin = profileData.activeCoin || 'INR';
+          const dBalances = profileData.coinBalances || {};
+          const mergedBalances = {
+            INR: dBalances.INR !== undefined ? dBalances.INR : (profileData.walletBalance || 0),
+            BTC: dBalances.BTC || 0,
+            ETH: dBalances.ETH || 0,
+            USDT: dBalances.USDT || 0,
+            SOL: dBalances.SOL || 0,
+            DOGE: dBalances.DOGE || 0
+          };
+          setActiveCoin(curActiveCoin);
+          setCoinBalances(mergedBalances);
+          setBalance(mergedBalances[curActiveCoin] || 0);
+          setWithdrawableBalance(mergedBalances[curActiveCoin] || 0);
           setIsBlocked(!!profileData.isBlocked);
         }
       } else {
         setUser(null);
         setBalance(0);
+        setActiveCoin('INR');
+        setCoinBalances({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
         setWithdrawableBalance(0);
         setIsBlocked(false);
       }
@@ -183,7 +200,19 @@ export default function App() {
     const unsub = onSnapshot(doc(db, 'users', user.uid), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
-        setBalance(data.walletBalance || 0);
+        const curActiveCoin = data.activeCoin || 'INR';
+        const dBalances = data.coinBalances || {};
+        const mergedBalances = {
+          INR: dBalances.INR !== undefined ? dBalances.INR : (data.walletBalance || 0),
+          BTC: dBalances.BTC || 0,
+          ETH: dBalances.ETH || 0,
+          USDT: dBalances.USDT || 0,
+          SOL: dBalances.SOL || 0,
+          DOGE: dBalances.DOGE || 0
+        };
+        setActiveCoin(curActiveCoin);
+        setCoinBalances(mergedBalances);
+        setBalance(mergedBalances[curActiveCoin] || 0);
         setIsBlocked(!!data.isBlocked);
       }
     });
@@ -246,7 +275,7 @@ export default function App() {
     if (currentUser && (queued || (autoPlayActive && currentBalance >= currentBetAmount))) {
       setHasActiveBet(true);
       const newBalance = currentBalance - currentBetAmount;
-      updateUserBalance(currentUser.uid, newBalance);
+      updateUserBalance(currentUser.uid, newBalance, activeCoin);
       setWithdrawableBalance(prev => Math.max(0, prev - currentBetAmount));
       setIsBetQueued(false); // Reset queue
     } else {
@@ -319,7 +348,7 @@ export default function App() {
     const currentUser = userRef.current;
     if (currentUser) {
       const newBalance = currentBal + winAmount;
-      updateUserBalance(currentUser.uid, newBalance);
+      updateUserBalance(currentUser.uid, newBalance, activeCoin);
       // Add only current profit
       setWithdrawableBalance(prev => prev + winAmount);
       
@@ -468,6 +497,12 @@ export default function App() {
       setError("Valid amount dalo bhai!");
       return;
     }
+    const coinBalance = coinBalances[selectedCoin.symbol] || 0;
+    if (amount > coinBalance) {
+      setError(`Aapke paas is coin (${selectedCoin.symbol}) me sirf ${coinBalance} balance ya fuel nahi hai!`);
+      setTimeout(() => setError(null), 4000);
+      return;
+    }
     if (amount > withdrawableBalance) {
       setError("Sirf 'Winnings' balance hi withdraw hota hai!");
       setTimeout(() => setError(null), 3000);
@@ -481,8 +516,8 @@ export default function App() {
         body: JSON.stringify({ amount, coin: selectedCoin, userAddress: userWithdrawAddress, userId: user.uid })
       });
       if (res.ok) {
-        updateUserBalance(user.uid, balance - amount);
-        setWithdrawableBalance(prev => prev - amount);
+        updateUserBalance(user.uid, coinBalance - amount, selectedCoin.symbol);
+        setWithdrawableBalance(prev => Math.max(0, prev - amount));
         setIsWithdrawModalOpen(false);
         setSelectedCoin(null);
         setWithdrawStep('coin');
@@ -579,16 +614,21 @@ export default function App() {
     try {
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
-      let newBalance = val;
-      if (userDoc.exists()) {
-        const currentBalance = userDoc.data()?.walletBalance || 0;
-        newBalance = currentBalance + val;
-      }
       
-      await setDoc(userRef, {
-        walletBalance: newBalance,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      let coinBalances: Record<string, number> = { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 };
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        if (data?.coinBalances) {
+          coinBalances = { ...coinBalances, ...data.coinBalances };
+        } else if (data?.walletBalance !== undefined) {
+          coinBalances.INR = data.walletBalance || 0;
+        }
+      }
+
+      const currentCoinBalance = coinBalances[selectedSymbol] || 0;
+      const targetBalance = parseFloat((currentCoinBalance + val).toFixed(8));
+      
+      await updateUserBalance(userId, targetBalance, selectedSymbol);
 
       // Add a customized notification
       const notificationId = Date.now().toString();
@@ -600,7 +640,7 @@ export default function App() {
         coin: { name: selectedCoinObj.name, symbol: selectedCoinObj.symbol, color: selectedCoinObj.color },
         userId: userId,
         timestamp: new Date().toISOString(),
-        message: `Admin has added ₹${val} fuel balance directly to your account using ${selectedCoinObj.symbol}! ✅`
+        message: `Admin has added ${val} balance directly to your account in ${selectedCoinObj.symbol}! ✅`
       });
 
       // Invoke server-side API to sync local lists/variables if applicable
@@ -834,7 +874,7 @@ export default function App() {
     }
   };
 
-  const approveDeposit = async (requestId: number, userId: string, amount: number) => {
+  const approveDeposit = async (requestId: number, userId: string, amount: number, coinSymbol: string) => {
     try {
       const res = await fetch('/api/admin/deposit/approve', {
         method: 'POST',
@@ -846,8 +886,10 @@ export default function App() {
         try {
           const userSnap = await getDoc(doc(db, 'users', userId));
           if (userSnap.exists()) {
-            const currentBalance = userSnap.data().walletBalance || 0;
-            await updateUserBalance(userId, currentBalance + amount);
+            const data = userSnap.data();
+            const coinBalances = data.coinBalances || {};
+            const currentBalance = coinBalances[coinSymbol] !== undefined ? coinBalances[coinSymbol] : (data.walletBalance || 0);
+            await updateUserBalance(userId, currentBalance + amount, coinSymbol);
           }
         } catch (fErr) {
           console.error("Firestore balance update failed for user", userId);
@@ -1143,7 +1185,7 @@ export default function App() {
                                                 <td className="p-2">
                                                     {req.status === 'pending' && (
                                                         <button 
-                                                            onClick={() => approveDeposit(req.id, req.userId, req.amount)}
+                                                            onClick={() => approveDeposit(req.id, req.userId, req.amount, req.coin?.symbol || 'INR')}
                                                             className="bg-[#FFD700] text-black px-3 py-1 rounded font-black hover:bg-white transition-all"
                                                         >
                                                             CONFIRM
@@ -1191,12 +1233,27 @@ export default function App() {
                                 </td>
                                 <td className="p-3">
                                   <div className="flex flex-col items-start gap-1">
-                                    <span className="text-[#FFD700] font-mono font-bold text-sm">₹{(u.walletBalance || 0).toLocaleString()}</span>
+                                    <span className="text-[#FFD700] font-mono font-bold text-sm">
+                                      {u.activeCoin || 'INR'}: {(!u.activeCoin || u.activeCoin === 'INR') ? '₹' : ''}
+                                      {(u.walletBalance || 0).toLocaleString(undefined, { minimumFractionDigits: (!u.activeCoin || u.activeCoin === 'INR') ? 2 : 4 })}
+                                    </span>
+                                    {u.coinBalances && (
+                                      <div className="flex flex-col gap-0.5 mt-1">
+                                        {Object.entries(u.coinBalances)
+                                          .filter(([cSym, cVal]) => cSym !== (u.activeCoin || 'INR') && (cVal as number) > 0)
+                                          .map(([cSym, cVal]) => (
+                                            <span key={cSym} className="text-[9px] text-zinc-400 font-mono">
+                                              • {cSym}: {cVal as number}
+                                            </span>
+                                          ))
+                                        }
+                                      </div>
+                                    )}
                                     <button
                                       onClick={() => handleResetUserBalance(u.uid)}
-                                      className="text-red-500 hover:text-red-400 font-bold hover:underline text-[9px] uppercase italic cursor-pointer bg-red-500/10 hover:bg-red-500/20 px-1.5 py-0.5 rounded border border-red-900/30 transition-all active:scale-95"
+                                      className="text-red-500 hover:text-red-400 font-bold hover:underline text-[9px] uppercase italic cursor-pointer bg-red-500/10 hover:bg-red-500/20 px-1.5 py-0.5 rounded border border-red-900/30 transition-all active:scale-95 mt-1"
                                     >
-                                      Reset to ₹0 🛠️
+                                      Reset ALL to 0 🛠️
                                     </button>
                                   </div>
                                 </td>
@@ -1314,13 +1371,43 @@ export default function App() {
         <div className="flex items-center gap-4 md:gap-6">
           {user ? (
             <div className="flex items-center gap-4">
-              <div className="hidden sm:block text-right leading-tight border-r border-zinc-800 pr-6">
-                <p className="text-[10px] uppercase tracking-widest text-[#888]">Fuel Balance</p>
-                {balance > 0 ? (
-                  <p className="text-xl md:text-2xl font-mono text-[#FFD700]">₹{balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                ) : (
-                  <p className="text-xs font-black text-red-500 uppercase italic animate-pulse">Low Fuel! Please Deposit</p>
-                )}
+              <div className="hidden sm:flex items-center gap-3 border-r border-zinc-800 pr-6">
+                <div className="text-right leading-tight">
+                  <p className="text-[10px] uppercase tracking-widest text-[#888]">Fuel Balance</p>
+                  {balance > 0 ? (
+                    <p className="text-xl md:text-2xl font-mono text-[#FFD700]">
+                      {activeCoin === 'INR' ? '₹' : ''}
+                      {balance.toLocaleString(undefined, { 
+                        minimumFractionDigits: activeCoin === 'INR' ? 2 : 4,
+                        maximumFractionDigits: activeCoin === 'INR' ? 2 : 6
+                      })}
+                      {activeCoin !== 'INR' ? ` ${activeCoin}` : ''}
+                    </p>
+                  ) : (
+                    <p className="text-xs font-black text-red-500 uppercase italic animate-pulse">Low Fuel! Please Deposit</p>
+                  )}
+                </div>
+                <select
+                  value={activeCoin}
+                  onChange={async (e) => {
+                    const selectedSym = e.target.value;
+                    setActiveCoin(selectedSym);
+                    const bal = coinBalances[selectedSym] || 0;
+                    setBalance(bal);
+                    try {
+                      const userRef = doc(db, 'users', user.uid);
+                      await setDoc(userRef, { activeCoin: selectedSym, walletBalance: bal }, { merge: true });
+                    } catch (err) {
+                      console.warn("Failed saving activeCoin preference:", err);
+                    }
+                  }}
+                  className="bg-black/60 border border-zinc-800 text-zinc-300 font-bold font-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded cursor-pointer hover:border-zinc-700 outline-none"
+                >
+                  <option value="INR" style={{ color: '#FFD700' }}>₹ INR</option>
+                  {coins.map(c => (
+                    <option key={c.symbol} value={c.symbol} style={{ color: c.color }}>{c.symbol}</option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex flex-col items-end">
@@ -1413,9 +1500,16 @@ export default function App() {
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
                     <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Fuel Balance</p>
                     {balance > 0 ? (
-                      <p className="text-2xl font-mono text-[#FFD700]">₹{balance.toLocaleString()}</p>
+                      <p className="text-2xl font-mono text-[#FFD700]">
+                        {activeCoin === 'INR' ? '₹' : ''}
+                        {balance.toLocaleString(undefined, { 
+                          minimumFractionDigits: activeCoin === 'INR' ? 2 : 4,
+                          maximumFractionDigits: activeCoin === 'INR' ? 2 : 6
+                        })}
+                        {activeCoin !== 'INR' ? ` ${activeCoin}` : ''}
+                      </p>
                     ) : (
-                      <p className="text-xs font-bold text-red-500 uppercase italic">Empty Fuel</p>
+                      <p className="text-sm font-bold text-red-500 uppercase italic">Empty Fuel</p>
                     )}
                   </div>
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
