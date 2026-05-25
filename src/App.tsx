@@ -692,12 +692,14 @@ export default function App() {
     }
     try {
       const userRef = doc(db, 'users', userId);
+      console.log("Attempting Firestore reset for", userId);
       await setDoc(userRef, { 
         walletBalance: 0,
         coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 },
         activeCoin: 'INR',
         updatedAt: serverTimestamp()
       }, { merge: true });
+      console.log("Firestore reset successful");
 
       const notificationId = Date.now().toString();
       const notificationRef = doc(db, 'notifications', notificationId);

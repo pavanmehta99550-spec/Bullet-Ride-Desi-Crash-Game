@@ -526,12 +526,12 @@ async function startServer() {
           DOGE: 0
         };
 
-        await userRef.update({
+        await userRef.set({
           walletBalance: 0,
           coinBalances: resetBalances,
           activeCoin: 'INR',
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        }, { merge: true });
 
         // Push real-time notification
         const notification = {
@@ -581,10 +581,10 @@ async function startServer() {
     if (db) {
       try {
         const userRef = db.collection("users").doc(userId);
-        await userRef.update({
+        await userRef.set({
           isBlocked: !!isBlocked,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        }, { merge: true });
 
         // Push real-time notification
         const notification = {
