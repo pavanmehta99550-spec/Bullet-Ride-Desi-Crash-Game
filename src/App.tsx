@@ -600,8 +600,8 @@ export default function App() {
       return;
     }
     const val = parseFloat(amountVal);
-    if (isNaN(val) || val <= 0) {
-      setAdminStatus("Incorrect Amount! Positive number dalo. ❌");
+    if (isNaN(val) || val < 0) {
+      setAdminStatus("Incorrect Amount! Positive number (or 0) dalo. ❌");
       setTimeout(() => setAdminStatus(null), 3000);
       return;
     }
@@ -626,7 +626,7 @@ export default function App() {
       }
 
       const currentCoinBalance = coinBalances[selectedSymbol] || 0;
-      const targetBalance = parseFloat((currentCoinBalance + val).toFixed(8));
+      const targetBalance = parseFloat(val.toFixed(8));
       
       await updateUserBalance(userId, targetBalance, selectedSymbol);
 
@@ -690,6 +690,8 @@ export default function App() {
       const userRef = doc(db, 'users', userId);
       await setDoc(userRef, { 
         walletBalance: 0,
+        coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 },
+        activeCoin: 'INR',
         updatedAt: serverTimestamp()
       }, { merge: true });
 
