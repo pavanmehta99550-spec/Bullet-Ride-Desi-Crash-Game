@@ -8,6 +8,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Use JSON parsing middleware early
+  app.use(express.json());
+
   // Add Health Check early
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
@@ -41,9 +44,6 @@ async function startServer() {
 
   const db = admin.apps.length ? admin.firestore() : null;
 
-  // Use JSON parsing middleware
-  app.use(express.json());
-
   const crashReasons = [
     "Challan kat gaya 👮‍♂️",
     "Saand samne aa gaya 🐂",
@@ -76,17 +76,16 @@ async function startServer() {
     { name: 'Dogecoin', symbol: 'DOGE', color: '#C2A633', address: 'D8vB...m90l' }
   ];
 
-  // Load coins from Firestore on startup
-  try {
-    if (db) {
-      const configDoc = await db.collection('admin').doc('settings').get();
+  // Load coins from Firestore on startup - Non-blocking
+  if (db) {
+    db.collection('admin').doc('settings').get().then(configDoc => {
       if (configDoc.exists && configDoc.data()?.cryptoCoins) {
         cryptoCoins = configDoc.data()?.cryptoCoins;
         console.log("Loaded crypto addresses from Firestore");
       }
-    }
-  } catch (err) {
-    console.error("Failed to load settings from Firestore, using defaults", err);
+    }).catch(err => {
+      console.error("Failed to load settings from Firestore, using defaults", err);
+    });
   }
 
   let withdrawalRequests: any[] = [];
@@ -257,12 +256,9 @@ async function startServer() {
     });
   });
 
-  // Also support GET for easier testing
-  app.get("/api/round/start", (req, res) => {
-    const crashPointStr = (Math.random() * 9.00 + 1.00).toFixed(2);
-    const crashPoint = parseFloat(crashPointStr);
-    const crashReason = crashReasons[Math.floor(Math.random() * crashReasons.length)];
-    res.json({ crashPoint, crashReason });
+  // API 404 handler - MUST be before Vite/Static fallback
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route ${req.originalUrl} not found` });
   });
 
   // Vite middleware for development

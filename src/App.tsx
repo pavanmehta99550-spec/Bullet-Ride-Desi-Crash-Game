@@ -23,6 +23,18 @@ interface GameHistory {
   time: string;
 }
 
+async function safeFetchJson<T = any>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  }
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(`Non-JSON response received`);
+  }
+  return await res.json();
+}
+
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -55,31 +67,21 @@ export default function App() {
   // Pre-fetch next round data
   const prefetchNextRound = async () => {
     try {
-      const res = await fetch('/api/round/start', { method: 'POST' });
-      if (res.ok) {
-        nextRoundData.current = await res.json();
-        setError(null); // Clear any previous network errors
-      } else {
-        const errText = await res.text();
-        console.error("Prefetch failed with status:", res.status, errText);
-        setError("Network error: Server responded with " + res.status);
-      }
-    } catch (err) {
-      console.error("Prefetch failed", err);
-      setError("Network issue: Cannot reach the game server. Please check your connection.");
+      const data = await safeFetchJson('/api/round/start', { method: 'POST' });
+      nextRoundData.current = data;
+      setError(null); // Clear any previous network errors
+    } catch (err: any) {
+      // Gracefully capture log without crashing or spamming console with HTML error traces
+      console.warn("Prefetch next round failed:", err.message || err);
     }
   };
 
   const fetchCoins = async () => {
     try {
-      const res = await fetch('/api/config/crypto');
-      if (res.ok) {
-        const data = await res.json();
-        setCoins(data);
-      }
-    } catch (err) {
-      console.error("Load coins failed", err);
-      // Don't set global error for coins, just fallback to defaults is fine on server side
+      const data = await safeFetchJson('/api/config/crypto');
+      setCoins(data);
+    } catch (err: any) {
+      console.warn("Load coins failed:", err.message || err);
     }
   };
 
@@ -204,15 +206,14 @@ export default function App() {
     } else {
       setLoading(true);
       try {
-        const res = await fetch('/api/round/start', { method: 'POST' });
-        if (!res.ok) throw new Error("Server error");
-        const data = await res.json();
+        const data = await safeFetchJson('/api/round/start', { method: 'POST' });
         setCrashPoint(data.crashPoint);
         setCrashReason(data.crashReason);
         setIsPlaying(true);
         prefetchNextRound();
       } catch (err: any) {
-        setError("Network Issue! Check connection.");
+        setError("Network Issue: Cannot start the round. Please check your connection and try again.");
+        console.warn("Failed to start round:", err.message || err);
       } finally {
         setLoading(false);
       }
@@ -431,25 +432,19 @@ export default function App() {
 
   const fetchAdminWithdrawals = async () => {
     try {
-      const res = await fetch('/api/admin/withdrawals');
-      if (res.ok) {
-        const data = await res.json();
-        setAdminWithdrawals(data);
-      }
-    } catch (err) {
-      console.error("Load withdrawals failed", err);
+      const data = await safeFetchJson('/api/admin/withdrawals');
+      setAdminWithdrawals(data);
+    } catch (err: any) {
+      console.warn("Load withdrawals failed:", err.message || err);
     }
   };
 
   const fetchAdminDeposits = async () => {
     try {
-      const res = await fetch('/api/admin/deposits');
-      if (res.ok) {
-        const data = await res.json();
-        setAdminDeposits(data);
-      }
-    } catch (err) {
-      console.error("Load deposits failed", err);
+      const data = await safeFetchJson('/api/admin/deposits');
+      setAdminDeposits(data);
+    } catch (err: any) {
+      console.warn("Load deposits failed:", err.message || err);
     }
   };
 
@@ -457,22 +452,19 @@ export default function App() {
 
   const fetchUserNotifications = async () => {
     try {
-      const res = await fetch('/api/user/notifications');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.length > userNotifications.length) {
-            // Check for deposit approvals to add balance
-            const newNotifs = data.slice(userNotifications.length);
-            newNotifs.forEach((notif: any) => {
-              if (notif.type === 'deposit_approved') {
-                setBalance(prev => prev + notif.amount);
-              }
-            });
-            setUserNotifications(data);
-        }
+      const data = await safeFetchJson('/api/user/notifications');
+      if (data && Array.isArray(data) && data.length > userNotifications.length) {
+          // Check for deposit approvals to add balance
+          const newNotifs = data.slice(userNotifications.length);
+          newNotifs.forEach((notif: any) => {
+            if (notif.type === 'deposit_approved') {
+              setBalance(prev => prev + notif.amount);
+            }
+          });
+          setUserNotifications(data);
       }
-    } catch (err) {
-      console.error("Load notifications failed", err);
+    } catch (err: any) {
+      console.warn("Load notifications failed:", err.message || err);
     }
   };
 
@@ -538,33 +530,33 @@ export default function App() {
 
   const saveCryptoAddresses = async () => {
     try {
-      const res = await fetch('/api/admin/set-crypto', {
+      const data = await safeFetchJson('/api/admin/set-crypto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ coins })
       });
-      const data = await res.json();
       setAdminStatus(data.message);
       fetchCoins(); // Refresh to sync
       setTimeout(() => setAdminStatus(null), 3000);
-    } catch (err) {
+    } catch (err: any) {
       setAdminStatus("Error updating addresses");
+      console.warn("Error updating addresses:", err.message || err);
     }
   };
 
   const setAdminOverride = async () => {
     try {
-      const res = await fetch('/api/admin/set-crash', {
+      const data = await safeFetchJson('/api/admin/set-crash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ crashPoint: adminCrashPoint, crashReason: adminCrashReason })
       });
-      const data = await res.json();
       setAdminStatus(data.message);
       setTimeout(() => setAdminStatus(null), 3000);
       prefetchNextRound(); // Force pre-fetch the next round with the new override
-    } catch (err) {
+    } catch (err: any) {
       setAdminStatus("Error setting override");
+      console.warn("Error setting override:", err.message || err);
     }
   };
 
