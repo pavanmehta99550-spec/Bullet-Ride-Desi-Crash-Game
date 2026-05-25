@@ -67,8 +67,6 @@ export default function App() {
   const [autoPlayTimer, setAutoPlayTimer] = useState<number | null>(null);
   const [isBetQueued, setIsBetQueued] = useState(false);
   const [hasActiveBet, setHasActiveBet] = useState(false);
-  
-  const autoPlayIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [multiplierPoints, setMultiplierPoints] = useState<{ x: number, y: number }[]>([]);
   const animationRef = useRef<number>(0);
@@ -124,28 +122,20 @@ export default function App() {
   };
 
   const startCountdown = () => {
-    if (autoPlayIntervalRef.current) {
-      clearInterval(autoPlayIntervalRef.current);
-      autoPlayIntervalRef.current = null;
-    }
-
-    let count = 5; // Fast 5-second countdown to keep the experience rapid
-    setAutoPlayTimer(count);
-
-    autoPlayIntervalRef.current = setInterval(() => {
-      count -= 1;
-      if (count <= 0) {
-        if (autoPlayIntervalRef.current) {
-          clearInterval(autoPlayIntervalRef.current);
-          autoPlayIntervalRef.current = null;
-        }
-        setAutoPlayTimer(null);
-        startRound(true);
-      } else {
-        setAutoPlayTimer(count);
-      }
-    }, 1000);
+    setAutoPlayTimer(5);
   };
+
+  useEffect(() => {
+    if (autoPlayTimer !== null && autoPlayTimer > 0) {
+      const timer = setTimeout(() => {
+        setAutoPlayTimer(prev => (prev !== null ? prev - 1 : null));
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (autoPlayTimer === 0) {
+      setAutoPlayTimer(null);
+      startRound(true);
+    }
+  }, [autoPlayTimer]);
 
   useEffect(() => {
     prefetchNextRound(); // Initial prefetch
@@ -186,7 +176,6 @@ export default function App() {
     });
 
     return () => {
-      if (autoPlayIntervalRef.current) clearInterval(autoPlayIntervalRef.current);
       unsubscribe();
     };
   }, []);
@@ -253,10 +242,7 @@ export default function App() {
       return;
     }
 
-    if (autoPlayIntervalRef.current) {
-      clearInterval(autoPlayIntervalRef.current);
-      autoPlayIntervalRef.current = null;
-    }
+    setAutoPlayTimer(null);
 
     setIsCrashed(false);
     setHasCashedOut(false);
