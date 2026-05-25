@@ -458,6 +458,86 @@ async function startServer() {
     }
   });
 
+  // Reset user's balance to 0 (Admin only)
+  app.post("/api/admin/user/reset-balance", async (req, res) => {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (db) {
+      try {
+        const userRef = db.collection("users").doc(userId);
+        await userRef.update({
+          walletBalance: 0,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Push real-time notification
+        const notification = {
+          id: Date.now(),
+          type: 'balance_reset',
+          amount: 0,
+          coin: { name: 'Admin Direct Cash', symbol: 'INR', color: '#FFD700' },
+          userId: userId,
+          timestamp: new Date().toISOString(),
+          message: `Admin has reset your fuel balance to 0 due to correction. 🛠️`
+        };
+        await db.collection('notifications').doc(notification.id.toString()).set(notification);
+        userNotifications.push(notification);
+
+        console.log(`Successfully reset balance to 0 for user ${userId}`);
+        res.json({ status: "ok", message: `Successfully reset user ${userId} balance to 0!` });
+      } catch (err) {
+        console.error("Direct balance reset failed:", err);
+        res.status(500).json({ error: "Database transaction failed" });
+      }
+    } else {
+      res.status(503).json({ error: "Firestore is not active" });
+    }
+  });
+
+  // Toggle block/unblock status for a user (Admin only)
+  app.post("/api/admin/user/toggle-block", async (req, res) => {
+    const { userId, isBlocked } = req.body;
+    if (!userId || isBlocked === undefined) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (db) {
+      try {
+        const userRef = db.collection("users").doc(userId);
+        await userRef.update({
+          isBlocked: !!isBlocked,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Push real-time notification
+        const notification = {
+          id: Date.now(),
+          type: 'account_status',
+          amount: 0,
+          coin: { name: 'System Security', symbol: 'SEC', color: '#ef4444' },
+          userId: userId,
+          timestamp: new Date().toISOString(),
+          message: isBlocked 
+            ? `Your account has been blocked by the administrator. 🚫 Please contact support.` 
+            : `Your account has been successfully unblocked by the administrator. ✅`
+        };
+        await db.collection('notifications').doc(notification.id.toString()).set(notification);
+        userNotifications.push(notification);
+
+        console.log(`Successfully updated blocked status to ${isBlocked} for user ${userId}`);
+        res.json({ status: "ok", message: `Successfully updated block status to ${isBlocked} for user ${userId}!` });
+      } catch (err) {
+        console.error("Direct change block status failed:", err);
+        res.status(500).json({ error: "Database transaction failed" });
+      }
+    } else {
+      res.status(503).json({ error: "Firestore is not active" });
+    }
+  });
+
   app.post("/api/admin/set-crash", (req, res) => {
     const { crashPoint, crashReason } = req.body;
     if (crashPoint) {

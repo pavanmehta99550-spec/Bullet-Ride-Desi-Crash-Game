@@ -39,6 +39,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
 
   const [multiplier, setMultiplier] = useState(1.00);
   const [coins, setCoins] = useState<{name: string, symbol: string, color: string, address: string}[]>([
@@ -154,12 +155,15 @@ export default function App() {
         const profile = await syncUserProfile(firebaseUser);
         setUser({ ...firebaseUser, ...profile });
         if (profile) {
-          setBalance(profile.walletBalance || 0);
+          const profileData = profile as any;
+          setBalance(profileData.walletBalance || 0);
+          setIsBlocked(!!profileData.isBlocked);
         }
       } else {
         setUser(null);
         setBalance(0);
         setWithdrawableBalance(0);
+        setIsBlocked(false);
       }
       setAuthLoading(false);
     });
@@ -170,13 +174,17 @@ export default function App() {
     };
   }, []);
 
-  // Real-time Balance Sync from Firestore
+  // Real-time Balance and Block Status Sync from Firestore
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setIsBlocked(false);
+      return;
+    }
     const unsub = onSnapshot(doc(db, 'users', user.uid), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
         setBalance(data.walletBalance || 0);
+        setIsBlocked(!!data.isBlocked);
       }
     });
     return () => unsub();
@@ -634,6 +642,124 @@ export default function App() {
     }
   };
 
+  const handleResetUserBalance = async (userId: string) => {
+    if (!window.confirm("Aap is user ka balance ₹0 (zero) karna chahte hain?")) {
+      return;
+    }
+    try {
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, { 
+        walletBalance: 0,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      const notificationId = Date.now().toString();
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await setDoc(notificationRef, {
+        id: Date.now(),
+        type: 'balance_reset',
+        amount: 0,
+        coin: { name: 'Direct Fuel Balance', symbol: 'INR', color: '#FFD700' },
+        userId: userId,
+        timestamp: new Date().toISOString(),
+        message: `Admin has reset your fuel balance to ₹0 due to correction. 🛠️`
+      });
+
+      fetch('/api/admin/user/reset-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      }).catch(err => {
+        console.warn("Non-blocking server reset webhook notify:", err);
+      });
+
+      setAdminStatus("User Fuel Balance Reset to ₹0! 🛠️✅");
+      fetchAdminUsers();
+      setTimeout(() => setAdminStatus(null), 5000);
+    } catch (err: any) {
+      console.error("Reset balance failed, using backend fallback:", err);
+      try {
+        const res = await fetch('/api/admin/user/reset-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        });
+        if (res.ok) {
+          setAdminStatus("User Balance Reset to ₹0 Successfully (via API)! ✅");
+          fetchAdminUsers();
+          setTimeout(() => setAdminStatus(null), 5000);
+        } else {
+          setAdminStatus("Reset balance via API failed! ❌");
+          setTimeout(() => setAdminStatus(null), 5000);
+        }
+      } catch (fallbackErr) {
+        setAdminStatus("Failed to reset balance: " + (err.message || String(err)));
+        setTimeout(() => setAdminStatus(null), 5000);
+      }
+    }
+  };
+
+  const handleToggleBlockUser = async (userId: string, currentBlocked: boolean) => {
+    const actionLabel = currentBlocked ? "Unblock" : "Block";
+    if (!window.confirm(`Kya aap is rider ko ${actionLabel} karna chahte hain?`)) {
+      return;
+    }
+    const targetBlocked = !currentBlocked;
+    try {
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, { 
+        isBlocked: targetBlocked,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      const notificationId = Date.now().toString();
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await setDoc(notificationRef, {
+        id: Date.now(),
+        type: 'account_status',
+        amount: 0,
+        coin: { name: 'System Security', symbol: 'SEC', color: '#ef4444' },
+        userId: userId,
+        timestamp: new Date().toISOString(),
+        message: targetBlocked 
+          ? `Your account has been blocked by the administrator. 🚫 Please contact support.` 
+          : `Your account has been successfully unblocked by the administrator. ✅`
+      });
+
+      fetch('/api/admin/user/toggle-block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, isBlocked: targetBlocked })
+      }).catch(err => {
+        console.warn("Non-blocking server status toggle webhook notify:", err);
+      });
+
+      setAdminStatus(`Rider ${actionLabel}ed Successfully! ✅`);
+      fetchAdminUsers();
+      setTimeout(() => setAdminStatus(null), 5000);
+    } catch (err: any) {
+      console.error("Toggle block status failed, trying backend fallback:", err);
+      try {
+        const res = await fetch('/api/admin/user/toggle-block', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, isBlocked: targetBlocked })
+        });
+        if (res.ok) {
+          setAdminStatus(`Rider ${actionLabel}ed Successfully (via API)! ✅`);
+          fetchAdminUsers();
+          setTimeout(() => setAdminStatus(null), 5000);
+        } else {
+          setAdminStatus(`Failed to ${actionLabel} rider via API! ❌`);
+          setTimeout(() => setAdminStatus(null), 5000);
+        }
+      } catch (fallbackErr) {
+        setAdminStatus("Failed to toggle block: " + (err.message || String(err)));
+        setTimeout(() => setAdminStatus(null), 5000);
+      }
+    }
+  };
+
   const fetchAdminWithdrawals = async () => {
     try {
       const data = await safeFetchJson('/api/admin/withdrawals');
@@ -1042,14 +1168,15 @@ export default function App() {
                   <div className="mt-8 pt-6 border-t border-zinc-800 space-y-4">
                     <h4 className="text-[#FFD700] font-bold text-xs uppercase tracking-widest">Registered User Fuel Balance Management</h4>
                     <div className="bg-black/40 border border-zinc-800 rounded overflow-hidden">
-                      <div className="max-h-80 overflow-y-auto">
-                        <table className="w-full text-left text-xs">
+                      <div className="max-h-80 overflow-y-auto w-full">
+                        <table className="w-full text-left text-xs min-w-[700px]">
                           <thead className="bg-[#111] text-zinc-400 uppercase text-[9px] font-bold border-b border-zinc-800">
                             <tr>
                               <th className="p-3">User Details</th>
                               <th className="p-3">User UID</th>
                               <th className="p-3">Current Fuel Balance</th>
-                              <th className="p-3 text-right">Add Fuel Balance Details & Coin Selection (₹)</th>
+                              <th className="p-3">Access Status</th>
+                              <th className="p-3 text-right">Add Balance Features</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-900">
@@ -1063,7 +1190,38 @@ export default function App() {
                                   {u.uid}
                                 </td>
                                 <td className="p-3">
-                                  <span className="text-[#FFD700] font-mono font-bold text-sm">₹{(u.walletBalance || 0).toLocaleString()}</span>
+                                  <div className="flex flex-col items-start gap-1">
+                                    <span className="text-[#FFD700] font-mono font-bold text-sm">₹{(u.walletBalance || 0).toLocaleString()}</span>
+                                    <button
+                                      onClick={() => handleResetUserBalance(u.uid)}
+                                      className="text-red-500 hover:text-red-400 font-bold hover:underline text-[9px] uppercase italic cursor-pointer bg-red-500/10 hover:bg-red-500/20 px-1.5 py-0.5 rounded border border-red-900/30 transition-all active:scale-95"
+                                    >
+                                      Reset to ₹0 🛠️
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex flex-col items-start gap-2">
+                                    {u.isBlocked ? (
+                                      <span className="px-2 py-0.5 rounded bg-red-950 border border-red-800 text-red-500 text-[8px] font-black uppercase tracking-wider">
+                                        Blocked 🚫
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded bg-green-950 border border-green-900 text-green-400 text-[8px] font-black uppercase tracking-wider">
+                                        Active ✅
+                                      </span>
+                                    )}
+                                    <button 
+                                      onClick={() => handleToggleBlockUser(u.uid, !!u.isBlocked)}
+                                      className={`px-2 py-1 rounded text-[9px] font-black uppercase transition-all active:scale-95 ${
+                                        u.isBlocked 
+                                          ? "bg-green-700 hover:bg-green-600 text-white" 
+                                          : "bg-red-950/40 border border-red-800 hover:bg-red-900/60 text-red-400"
+                                      }`}
+                                    >
+                                      {u.isBlocked ? "Unblock Rider" : "Block Rider"}
+                                    </button>
+                                  </div>
                                 </td>
                                 <td className="p-3 text-right">
                                   <div className="inline-flex gap-2 items-center">
@@ -1090,7 +1248,7 @@ export default function App() {
                                         ...prev,
                                         [u.uid]: e.target.value
                                       }))}
-                                      className="w-20 bg-zinc-950 border border-zinc-850 px-2 py-1.5 text-xs text-white rounded outline-none focus:border-[#FFD700] font-mono text-center"
+                                      className="w-16 bg-zinc-950 border border-zinc-850 px-2 py-1.5 text-xs text-white rounded outline-none focus:border-[#FFD700] font-mono text-center"
                                     />
                                     <button
                                       onClick={() => handleAddUserBalance(u.uid)}
@@ -1104,7 +1262,7 @@ export default function App() {
                             ))}
                             {adminUsers.length === 0 && (
                               <tr>
-                                <td colSpan={4} className="p-8 text-center text-zinc-600 italic text-xs">
+                                <td colSpan={5} className="p-8 text-center text-zinc-600 italic text-xs">
                                   No registered riders found in the database.
                                 </td>
                               </tr>
@@ -1577,31 +1735,80 @@ export default function App() {
       {/* User Notifications */}
       <div className="fixed top-24 right-4 z-[100] flex flex-col gap-2 w-72 pointer-events-none">
         <AnimatePresence>
-            {userNotifications.slice().reverse().map((notif) => (
+            {userNotifications.slice().reverse().map((notif) => {
+              const isSuccess = notif.type === 'deposit_approved' || (notif.type === 'account_status' && !notif.message.includes('blocked'));
+              const isDanger = notif.type === 'balance_reset' || (notif.type === 'account_status' && notif.message.includes('blocked'));
+              const borderColor = isSuccess ? 'border-green-500' : isDanger ? 'border-red-500' : 'border-blue-500';
+              const titleColor = isSuccess ? 'text-green-500' : isDanger ? 'text-red-500' : 'text-blue-400';
+              const titleText = notif.type === 'deposit_approved' 
+                ? 'Deposit Success' 
+                : notif.type === 'balance_reset' 
+                  ? 'Fuel Correction' 
+                  : notif.type === 'account_status' 
+                    ? 'Security Alert' 
+                    : 'Withdrawal Success';
+              const footerMsg = notif.type === 'deposit_approved'
+                ? 'Your fuel has been filled! ⛽'
+                : notif.type === 'balance_reset'
+                  ? 'Wallet correction applied by admin. 🛠_'
+                  : notif.type === 'account_status'
+                    ? 'Account status configuration changed. 🔒'
+                    : 'Funds have been sent to your wallet. Happy riding! 🏍_';
+
+              return (
                 <motion.div
                     key={notif.id}
                     initial={{ x: 300, opacity: 0 }}
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: 300, opacity: 0 }}
-                    className="bg-[#1A1A1A] border-l-4 border-green-500 p-4 shadow-2xl pointer-events-auto"
+                    className={`bg-[#1A1A1A] border-l-4 ${borderColor} p-4 shadow-2xl pointer-events-auto`}
                 >
                     <div className="flex justify-between items-start mb-1">
-                        <span className="text-green-500 font-black text-[10px] uppercase italic tracking-widest">
-                          {notif.type === 'deposit_approved' ? 'Deposit Success' : 'Withdrawal Success'}
+                        <span className={`font-black text-[10px] uppercase italic tracking-widest ${titleColor}`}>
+                          {titleText}
                         </span>
                         <span className="text-zinc-600 font-mono text-[8px]">{new Date(notif.timestamp).toLocaleString()}</span>
                     </div>
                     <p className="text-white text-xs font-bold leading-tight">{notif.message}</p>
                     <p className="text-zinc-500 text-[9px] mt-2 italic">
-                      {notif.type === 'deposit_approved' ? 'Your fuel has been filled! ⛽' : 'Funds have been sent to your wallet. Happy riding! 🏍️'}
+                      {footerMsg}
                     </p>
                 </motion.div>
-            ))}
+              );
+            })}
         </AnimatePresence>
       </div>
 
-      {/* Main Gameplay Area */}
-      <main className="flex-1 flex flex-col md:flex-row h-full">
+      {isBlocked ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-950 min-h-[400px]">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="max-w-md w-full bg-[#111111] border-2 border-red-500/30 p-8 rounded-2xl shadow-[0_20px_50px_rgba(239,68,68,0.15)] space-y-6"
+          >
+            <div className="w-16 h-16 bg-red-500/10 border-2 border-red-500/30 rounded-full flex items-center justify-center mx-auto text-red-500 text-3xl animate-bounce">
+              🚫
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Rider Account Blocked!</h2>
+              <p className="text-zinc-400 text-sm leading-relaxed">
+                Aapka account administrator dwaara block kar diya gaya hai. Kripya naye transactions, bets, ya rules ke liye support team se contact karein.
+              </p>
+              <div className="p-3 bg-red-950/20 border border-red-900/40 rounded-lg text-[10px] text-red-400 font-bold uppercase italic font-mono">
+                Reason: Security Review / Violation of Terms
+              </div>
+            </div>
+            <button 
+              onClick={() => signOut(auth)}
+              className="w-full py-4 bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider transition-all rounded-lg active:scale-95"
+            >
+              Sign Out from Account
+            </button>
+          </motion.div>
+        </div>
+      ) : (
+        /* Main Gameplay Area */
+        <main className="flex-1 flex flex-col md:flex-row h-full">
         
         {/* Left Side Panel: History */}
         <aside className="w-full md:w-64 border-r border-[#333] flex flex-col p-4 bg-[#141414]">
@@ -1975,6 +2182,7 @@ export default function App() {
           </p>
         </aside>
       </main>
+      )}
 
       {/* Footer Ticker */}
       <footer className="bg-black h-12 flex items-center border-t border-[#222]">
