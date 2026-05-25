@@ -278,7 +278,7 @@ export default function App() {
       
       if (isOverride) {
         // Consume the override on the server
-        fetch('/api/admin/consume-override', { method: 'POST' }).catch(console.error);
+        await fetch('/api/admin/consume-override', { method: 'POST' }).catch(console.error);
       }
       
       nextRoundData.current = null;
