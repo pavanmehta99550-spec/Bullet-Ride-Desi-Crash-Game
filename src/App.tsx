@@ -101,7 +101,7 @@ export default function App() {
   // Pre-fetch next round data
   const prefetchNextRound = async () => {
     try {
-      const data = await safeFetchJson('/api/round/start', { method: 'POST' });
+      const data = await safeFetchJson('/api/round/get-data', { method: 'POST' });
       nextRoundData.current = data;
       setError(null); // Clear any previous network errors
     } catch (err: any) {
@@ -272,8 +272,15 @@ export default function App() {
 
     // Use pre-fetched data or fetch fresh
     if (nextRoundData.current) {
-      setCrashPoint(nextRoundData.current.crashPoint);
-      setCrashReason(nextRoundData.current.crashReason);
+      const { crashPoint, crashReason, isOverride } = nextRoundData.current;
+      setCrashPoint(crashPoint);
+      setCrashReason(crashReason);
+      
+      if (isOverride) {
+        // Consume the override on the server
+        fetch('/api/admin/consume-override', { method: 'POST' }).catch(console.error);
+      }
+      
       nextRoundData.current = null;
       setIsPlaying(true);
       prefetchNextRound(); // Fetch the one after this

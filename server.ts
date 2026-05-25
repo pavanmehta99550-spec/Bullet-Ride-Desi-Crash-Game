@@ -640,6 +640,42 @@ async function startServer() {
     }
   });
 
+  app.post("/api/admin/consume-override", (req, res) => {
+    nextForcedCrash = null;
+    nextForcedReason = null;
+    res.json({ status: "ok" });
+  });
+
+  app.post("/api/round/get-data", (req, res) => {
+    let crashPoint: number;
+    let crashReason: string;
+    let isOverride = false;
+
+    if (nextForcedCrash !== null) {
+      crashPoint = nextForcedCrash;
+      crashReason = nextForcedReason || "Admin Override 🛠️";
+      isOverride = true;
+    } else {
+      const rand = Math.random();
+      let cp;
+      if (rand < 0.5) {
+        cp = 1.00 + (Math.random() * 1.00);
+      } else if (rand < 0.8) {
+        cp = 2.00 + (Math.random() * 3.00);
+      } else {
+        cp = 5.00 + (Math.random() * 5.00);
+      }
+      crashPoint = parseFloat(cp.toFixed(2));
+      crashReason = crashReasons[Math.floor(Math.random() * crashReasons.length)];
+    }
+    
+    res.json({
+      crashPoint,
+      crashReason,
+      isOverride
+    });
+  });
+
   // The requested backend endpoint
   app.post("/api/round/start", (req, res) => {
     let finalCrashPoint: number;
