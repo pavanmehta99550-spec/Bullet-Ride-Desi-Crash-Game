@@ -217,6 +217,7 @@ export default function App() {
       limit(10)
     );
     const unsub = onSnapshot(q, (snapshot) => {
+      console.log("History snapshot received:", snapshot.size, "docs");
       const historyData = snapshot.docs.map(doc => ({
         id: parseInt(doc.id),
         multiplier: doc.data().multiplier,
@@ -717,6 +718,21 @@ export default function App() {
 
       setAdminStatus(`User Fuel Balance SET! ✅ (${selectedSymbol})`);
       setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
+      
+      // Optimistically update the local state
+      setAdminUsers(prevUsers => prevUsers.map(u => {
+        if (u.uid === userId) {
+          const updatedUser = { ...u };
+          if (!updatedUser.coinBalances) updatedUser.coinBalances = {};
+          updatedUser.coinBalances[selectedSymbol] = targetBalance;
+          if (selectedSymbol === 'INR') {
+            updatedUser.walletBalance = targetBalance;
+          }
+          return updatedUser;
+        }
+        return u;
+      }));
+
       fetchAdminUsers();
       setTimeout(() => setAdminStatus(null), 5000);
     } catch (err: any) {

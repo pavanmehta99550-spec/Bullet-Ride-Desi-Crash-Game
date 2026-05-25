@@ -65,12 +65,13 @@ service cloud.firestore {
         && incoming().keys().hasAll(['uid', 'email', 'displayName', 'walletBalance', 'createdAt'])
         && incoming().keys().size() == 5;
 
-      allow update: if (isAdmin()) || (isOwner(userId)
+      allow update: if isAdmin();
+      allow update: if isOwner(userId)
         && isValidUser(incoming(), userId)
         && incoming().createdAt == existing().createdAt
         && incoming().uid == existing().uid
-        && incoming().diff(existing()).affectedKeys().hasOnly(['walletBalance', 'displayName', 'updatedAt'])
-        && (incoming().get('updatedAt', null) == request.time || !incoming().keys().hasAny(['updatedAt'])));
+        && incoming().diff(existing()).affectedKeys().hasOnly(['walletBalance', 'displayName', 'updatedAt', 'coinBalances', 'activeCoin'])
+        && (incoming().get('updatedAt', null) == request.time || !incoming().keys().hasAny(['updatedAt']));
     }
 
     match /users/{userId}/history/{gameId} {
@@ -86,6 +87,24 @@ service cloud.firestore {
       
       // History is immutable
       allow update, delete: if false;
+    }
+
+    match /deposits/{depositId} {
+      allow list, get: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow list, get: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow list, get: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
     }
   }
 }
