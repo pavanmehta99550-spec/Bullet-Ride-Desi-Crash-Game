@@ -630,7 +630,7 @@ export default function App() {
       }
 
       const currentCoinBalance = coinBalances[selectedSymbol] || 0;
-      const targetBalance = parseFloat(val.toFixed(8));
+      const targetBalance = parseFloat((currentCoinBalance + val).toFixed(8));
       
       await updateUserBalance(userId, targetBalance, selectedSymbol);
 
@@ -753,12 +753,14 @@ export default function App() {
       return;
     }
     const targetBlocked = !currentBlocked;
+    console.log(`Action: ${actionLabel}ing user ${userId}. Target blocked status: ${targetBlocked}`);
     try {
       const userRef = doc(db, 'users', userId);
       await setDoc(userRef, { 
         isBlocked: targetBlocked,
         updatedAt: serverTimestamp()
       }, { merge: true });
+      console.log(`Client-side Firestore setDoc successful for user ${userId}`);
 
       const notificationId = Date.now().toString();
       const notificationRef = doc(db, 'notifications', notificationId);
@@ -774,11 +776,12 @@ export default function App() {
           : `Your account has been successfully unblocked by the administrator. ✅`
       });
 
+      console.log(`Sending toggle-block API request for user ${userId}`);
       fetch('/api/admin/user/toggle-block', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, isBlocked: targetBlocked })
-      }).catch(err => {
+      }).then(res => res.json()).then(data => console.log("Toggle block API response:", data)).catch(err => {
         console.warn("Non-blocking server status toggle webhook notify:", err);
       });
 
@@ -787,6 +790,7 @@ export default function App() {
       setTimeout(() => setAdminStatus(null), 5000);
     } catch (err: any) {
       console.error("Toggle block status failed, trying backend fallback:", err);
+      // ... (rest of fallback)
       try {
         const res = await fetch('/api/admin/user/toggle-block', {
           method: 'POST',
@@ -1382,10 +1386,10 @@ export default function App() {
               <div className="hidden sm:flex items-center gap-3 border-r border-zinc-800 pr-6">
                 <div className="text-right leading-tight">
                   <p className="text-[10px] uppercase tracking-widest text-[#888]">Fuel Balance</p>
-                  {balance > 0 ? (
+                  {coinBalances[activeCoin] > 0 ? (
                     <p className="text-xl md:text-2xl font-mono text-[#FFD700]">
                       {activeCoin === 'INR' ? '₹' : ''}
-                      {balance.toLocaleString(undefined, { 
+                      {coinBalances[activeCoin].toLocaleString(undefined, { 
                         minimumFractionDigits: activeCoin === 'INR' ? 2 : 4,
                         maximumFractionDigits: activeCoin === 'INR' ? 2 : 6
                       })}
@@ -1507,10 +1511,10 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
                     <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Fuel Balance</p>
-                    {balance > 0 ? (
+                    {coinBalances[activeCoin] > 0 ? (
                       <p className="text-2xl font-mono text-[#FFD700]">
                         {activeCoin === 'INR' ? '₹' : ''}
-                        {balance.toLocaleString(undefined, { 
+                        {coinBalances[activeCoin].toLocaleString(undefined, { 
                           minimumFractionDigits: activeCoin === 'INR' ? 2 : 4,
                           maximumFractionDigits: activeCoin === 'INR' ? 2 : 6
                         })}
@@ -1782,7 +1786,11 @@ export default function App() {
                     <div className="flex gap-4">
                       <div className="flex-1 space-y-2">
                         <label className="text-[10px] font-bold uppercase text-zinc-500">Fuel Balance</label>
-                        <div className="text-lg font-mono text-zinc-500">₹{balance.toLocaleString()}</div>
+                        <div className="text-lg font-mono text-zinc-500">
+                          {activeCoin === 'INR' ? '₹' : ''}
+                          {coinBalances[activeCoin].toLocaleString()}
+                          {activeCoin !== 'INR' ? ` ${activeCoin}` : ''}
+                        </div>
                       </div>
                       <div className="flex-1 space-y-2 border-l border-zinc-800 pl-4">
                         <label className="text-[10px] font-bold uppercase text-[#FFD700]">Profit Balance</label>
@@ -2238,7 +2246,7 @@ export default function App() {
                   if (isBetQueued) {
                     setIsBetQueued(false);
                   } else {
-                    if (balance < betAmount) {
+                    if (coinBalances[activeCoin] < betAmount) {
                       setError("Bas kar bhai! Balance low hai.");
                       setTimeout(() => setError(null), 3000);
                       return;
@@ -2251,7 +2259,7 @@ export default function App() {
                 if (isBetQueued) {
                   setIsBetQueued(false);
                 } else {
-                  if (balance < betAmount) {
+                  if (coinBalances[activeCoin] < betAmount) {
                     setError("Bas kar bhai! Balance low hai.");
                     setTimeout(() => setError(null), 3000);
                     return;
@@ -2281,7 +2289,7 @@ export default function App() {
                     ? `CANCEL BET` 
                     : isPlaying 
                       ? `BET FOR NEXT RIDE` 
-                      : `BET ₹${betAmount}`}
+                      : `BET ${betAmount} ${activeCoin}`}
             </span>
           </button>
           

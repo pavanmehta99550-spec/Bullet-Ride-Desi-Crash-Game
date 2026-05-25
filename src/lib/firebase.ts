@@ -96,12 +96,17 @@ export async function updateUserBalance(userId: string, newBalance: number, acti
     
     coinBalances[activeCoin] = parseFloat(newBalance.toFixed(8));
 
-    await setDoc(userRef, { 
-      walletBalance: newBalance,
+    const updateData: any = {
       coinBalances,
       activeCoin,
       updatedAt: serverTimestamp()
-    }, { merge: true });
+    };
+    
+    if (activeCoin === 'INR') {
+      updateData.walletBalance = newBalance;
+    }
+
+    await setDoc(userRef, updateData, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
   }

@@ -580,11 +580,13 @@ async function startServer() {
     let dbSuccess = false;
     if (db) {
       try {
+        console.log(`Admin toggle block for user ${userId} to ${isBlocked}`);
         const userRef = db.collection("users").doc(userId);
         await userRef.set({
           isBlocked: !!isBlocked,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
+        console.log(`Firestore updated for user ${userId}`);
 
         // Push real-time notification
         const notification = {
@@ -605,7 +607,7 @@ async function startServer() {
         dbSuccess = true;
         return res.json({ status: "ok", message: `Successfully updated block status to ${isBlocked} for user ${userId}!` });
       } catch (err) {
-        console.warn("Direct change block status Firestore error (bypassing):", err);
+        console.error("Direct change block status Firestore error:", err);
       }
     }
     
