@@ -213,7 +213,7 @@ export default function App() {
     if (!user) return;
     const q = query(
       collection(db, 'users', user.uid, 'history'),
-      orderBy('timestamp', 'desc'),
+      orderBy('createdAt', 'desc'),
       limit(10)
     );
     const unsub = onSnapshot(q, (snapshot) => {
@@ -273,6 +273,7 @@ export default function App() {
     // Use pre-fetched data or fetch fresh
     if (nextRoundData.current) {
       const { crashPoint, crashReason, isOverride } = nextRoundData.current;
+      console.log(`[GAME] Starting round with ${isOverride ? 'OVERRIDE' : 'RANDOM'} crash point: ${crashPoint}x`);
       
       // Update refs directly to avoid state race condition
       crashPointRef.current = crashPoint;
@@ -617,78 +618,27 @@ export default function App() {
     }
 
     const selectedSymbol = userCoinSelections[userId] || 'INR';
-    const selectedCoinObj = selectedSymbol === 'INR'
-      ? { name: 'Direct Fuel Balance', symbol: 'INR', color: '#FFD700' }
-      : (coins.find(c => c.symbol === selectedSymbol) || { name: 'Direct Fuel Balance', symbol: 'INR', color: '#FFD700' });
-
+    
     try {
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
-      
-      let coinBalances: Record<string, number> = { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 };
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        if (data?.coinBalances) {
-          coinBalances = { ...coinBalances, ...data.coinBalances };
-        } else if (data?.walletBalance !== undefined) {
-          coinBalances.INR = data.walletBalance || 0;
-        }
-      }
-
-      const currentCoinBalance = coinBalances[selectedSymbol] || 0;
-      const targetBalance = parseFloat((currentCoinBalance + val).toFixed(8));
-      
-      await updateUserBalance(userId, targetBalance, selectedSymbol);
-
-      // Add a customized notification
-      const notificationId = Date.now().toString();
-      const notificationRef = doc(db, 'notifications', notificationId);
-      await setDoc(notificationRef, {
-        id: notificationId,
-        type: 'deposit_approved',
-        amount: val,
-        coin: { name: selectedCoinObj.name, symbol: selectedCoinObj.symbol, color: selectedCoinObj.color },
-        userId: userId,
-        timestamp: new Date().toISOString(),
-        message: `Admin has added ${val} balance directly to your account in ${selectedCoinObj.symbol}! ✅`
-      });
-
-      // Invoke server-side API to sync local lists/variables if applicable
-      fetch('/api/admin/user/update-balance', {
+      setAdminStatus("Updating Balance... ⏳");
+      const res = await fetch('/api/admin/user/update-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, amountToAdd: val, coinSymbol: selectedSymbol })
-      }).catch(err => {
-        console.warn("Non-blocking server webhook balance-update notify:", err);
       });
-
-      setAdminStatus(`User Fuel Balance Direct Added! ✅ (${selectedCoinObj.symbol})`);
-      setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
-      fetchAdminUsers();
-      setTimeout(() => setAdminStatus(null), 5000);
-    } catch (err: any) {
-      console.error("Direct client update failed, trying backend fallback:", err);
-      try {
-        const res = await fetch('/api/admin/user/update-balance', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, amountToAdd: val, coinSymbol: selectedSymbol })
-        });
-        if (res.ok) {
-          setAdminStatus(`User Balance Updated Successfully (via API)! ✅ (${selectedCoinObj.symbol})`);
-          setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
-          fetchAdminUsers();
-          setTimeout(() => setAdminStatus(null), 5000);
-        } else {
-          const errData = await res.json();
-          setAdminStatus(errData.error || "Update fail ho gaya! ❌");
-          setTimeout(() => setAdminStatus(null), 5000);
-        }
-      } catch (fallbackErr: any) {
-        console.error("Direct balance fallback failed:", fallbackErr);
-        setAdminStatus("Failed to update: " + (err.message || String(err)));
+      
+      if (res.ok) {
+        setAdminStatus(`Fuel Balance Added Successfully! ✅ (${selectedSymbol})`);
+        setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
+        fetchAdminUsers();
         setTimeout(() => setAdminStatus(null), 5000);
+      } else {
+        const errData = await res.json();
+        throw new Error(errData.error || "API rejection");
       }
+    } catch (err: any) {
+      console.error("Balance update failed:", err);
+      setAdminStatus(`Failed to update: ${err.message || String(err)} ❌`);
     }
   };
 
@@ -930,6 +880,7 @@ export default function App() {
     try {
       const data = await safeFetchJson(`/api/user/notifications?userId=${user.uid}`);
       if (data && Array.isArray(data)) {
+          console.log(`Fetched ${data.length} notifications for user`);
           setUserNotifications(data);
       }
     } catch (err: any) {

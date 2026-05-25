@@ -246,7 +246,7 @@ async function startServer() {
             console.log(`Incremented Firestore balance for user ${depData.userId} by ${depData.amount} ${coinSymbol}`);
             
             const notification = {
-              id: Date.now(),
+              id: Date.now().toString(),
               type: 'deposit_approved',
               amount: depData.amount,
               coin: depData.coin,
@@ -275,7 +275,7 @@ async function startServer() {
     if (!dbSuccess && request) {
       request.status = 'approved';
       const notification = {
-        id: Date.now(),
+        id: Date.now().toString(),
         type: 'deposit_approved',
         amount: request.amount,
         coin: request.coin,
@@ -338,7 +338,7 @@ async function startServer() {
             await witRef.update({ status: 'approved' });
             
             const notification = {
-              id: Date.now(),
+              id: Date.now().toString(),
               type: 'withdrawal_approved',
               amount: witData.amount,
               coin: witData.coin,
@@ -366,7 +366,7 @@ async function startServer() {
     if (!dbSuccess && request) {
       request.status = 'approved';
       const notification = {
-        id: Date.now(),
+        id: Date.now().toString(),
         type: 'withdrawal_approved',
         amount: request.amount,
         coin: request.coin,
@@ -483,7 +483,7 @@ async function startServer() {
 
         // Push real-time deposit approval notification to trigger auto-balance update in User UI
         const notification = {
-          id: Date.now(),
+          id: Date.now().toString(),
           type: 'deposit_approved',
           amount: val,
           coin: targetCoin,
@@ -517,7 +517,7 @@ async function startServer() {
         : { name: 'Direct Fuel Balance', symbol: 'INR', color: '#FFD700' };
 
       const notification = {
-        id: Date.now(),
+        id: Date.now().toString(),
         type: 'deposit_approved',
         amount: val,
         coin: targetCoin,
@@ -561,7 +561,7 @@ async function startServer() {
 
         // Push real-time notification
         const notification = {
-          id: Date.now(),
+          id: Date.now().toString(),
           type: 'balance_reset',
           amount: 0,
           coin: { name: 'Admin Direct Cash', symbol: 'INR', color: '#FFD700' },
@@ -582,7 +582,7 @@ async function startServer() {
     
     if (!dbSuccess) {
       const notification = {
-        id: Date.now(),
+        id: Date.now().toString(),
         type: 'balance_reset',
         amount: 0,
         coin: { name: 'Admin Direct Cash', symbol: 'INR', color: '#FFD700' },
@@ -616,7 +616,7 @@ async function startServer() {
 
         // Push real-time notification
         const notification = {
-          id: Date.now(),
+          id: Date.now().toString(),
           type: 'account_status',
           amount: 0,
           coin: { name: 'System Security', symbol: 'SEC', color: '#ef4444' },
@@ -639,7 +639,7 @@ async function startServer() {
     
     if (!dbSuccess) {
       const notification = {
-        id: Date.now(),
+        id: Date.now().toString(),
         type: 'account_status',
         amount: 0,
         coin: { name: 'System Security', symbol: 'SEC', color: '#ef4444' },
@@ -672,7 +672,7 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  app.post("/api/round/get-data", (req, res) => {
+  function generateRoundData() {
     let crashPoint: number;
     let crashReason: string;
     let isOverride = false;
@@ -681,6 +681,7 @@ async function startServer() {
       crashPoint = nextForcedCrash;
       crashReason = nextForcedReason || "Admin Override 🛠️";
       isOverride = true;
+      console.log(`[ROUND] Using Override: ${crashPoint}x - ${crashReason}`);
     } else {
       const rand = Math.random();
       let cp;
@@ -693,41 +694,19 @@ async function startServer() {
       }
       crashPoint = parseFloat(cp.toFixed(2));
       crashReason = crashReasons[Math.floor(Math.random() * crashReasons.length)];
+      console.log(`[ROUND] Generated Random: ${crashPoint}x`);
     }
-    
-    res.json({
-      crashPoint,
-      crashReason,
-      isOverride
-    });
+
+    return { crashPoint, crashReason, isOverride };
+  }
+
+  app.post("/api/round/get-data", (req, res) => {
+    res.json(generateRoundData());
   });
 
   // The requested backend endpoint
   app.post("/api/round/start", (req, res) => {
-    let finalCrashPoint: number;
-    let finalCrashReason: string;
-
-    if (nextForcedCrash !== null) {
-      finalCrashPoint = nextForcedCrash;
-      finalCrashReason = nextForcedReason || "Admin Override 🛠️";
-    } else {
-      const rand = Math.random();
-      let crashPoint;
-      if (rand < 0.5) {
-        crashPoint = 1.00 + (Math.random() * 1.00);
-      } else if (rand < 0.8) {
-        crashPoint = 2.00 + (Math.random() * 3.00);
-      } else {
-        crashPoint = 5.00 + (Math.random() * 5.00);
-      }
-      finalCrashPoint = parseFloat(crashPoint.toFixed(2));
-      finalCrashReason = crashReasons[Math.floor(Math.random() * crashReasons.length)];
-    }
-    
-    res.json({
-      crashPoint: finalCrashPoint,
-      crashReason: finalCrashReason
-    });
+    res.json(generateRoundData());
   });
 
   // API 404 handler - MUST be before Vite/Static fallback
