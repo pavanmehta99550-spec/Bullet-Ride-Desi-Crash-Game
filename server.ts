@@ -381,8 +381,34 @@ async function startServer() {
     }
   });
 
+  app.post("/api/user/notifications/delete", async (req, res) => {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: "Missing ID" });
+    
+    console.log("Attempting to delete notification:", id, "Available:", userNotifications.map(n => n.id));
+
+    // Remove from memory
+    userNotifications = userNotifications.filter(n => n.id.toString() !== id.toString());
+    console.log("Notifications after filter:", userNotifications.map(n => n.id));
+
+    // Remove from Firestore
+    if (db) {
+      try {
+        await db.collection('notifications').doc(id.toString()).delete();
+        console.log("Deleted from Firestore:", id);
+      } catch (err) {
+        console.error("Failed to delete notification from Firestore:", err);
+      }
+    }
+    
+    res.json({ status: "ok" });
+  });
+
   app.get("/api/user/notifications", (req, res) => {
-    res.json(userNotifications);
+    const { userId } = req.query;
+    if (!userId) return res.json([]);
+    const filtered = userNotifications.filter(n => n.userId === userId);
+    res.json(filtered);
   });
 
   // Fetch all registered users in Firestore (Admin only)
@@ -684,8 +710,6 @@ async function startServer() {
     if (nextForcedCrash !== null) {
       finalCrashPoint = nextForcedCrash;
       finalCrashReason = nextForcedReason || "Admin Override 🛠️";
-      nextForcedCrash = null;
-      nextForcedReason = null;
     } else {
       const rand = Math.random();
       let crashPoint;

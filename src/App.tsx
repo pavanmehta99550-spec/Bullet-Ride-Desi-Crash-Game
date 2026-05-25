@@ -213,7 +213,7 @@ export default function App() {
     if (!user) return;
     const q = query(
       collection(db, 'users', user.uid, 'history'),
-      orderBy('createdAt', 'desc'),
+      orderBy('timestamp', 'desc'),
       limit(10)
     );
     const unsub = onSnapshot(q, (snapshot) => {
@@ -441,8 +441,17 @@ export default function App() {
     });
   };
 
-  const removeNotification = (id: number) => {
-    setUserNotifications(prev => prev.filter(n => n.id !== id));
+  const removeNotification = async (id: string) => {
+    setUserNotifications(prev => prev.filter(n => n.id.toString() !== id.toString()));
+    try {
+      await fetch('/api/user/notifications/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+    } catch (err) {
+      console.error("Failed to dismiss notification:", err);
+    }
   };
 
   const [adminPasscode, setAdminPasscode] = useState(() => localStorage.getItem('rider_admin_pin') || '350');
@@ -635,7 +644,7 @@ export default function App() {
       const notificationId = Date.now().toString();
       const notificationRef = doc(db, 'notifications', notificationId);
       await setDoc(notificationRef, {
-        id: Date.now(),
+        id: notificationId,
         type: 'deposit_approved',
         amount: val,
         coin: { name: selectedCoinObj.name, symbol: selectedCoinObj.symbol, color: selectedCoinObj.color },
@@ -708,7 +717,7 @@ export default function App() {
       const notificationId = Date.now().toString();
       const notificationRef = doc(db, 'notifications', notificationId);
       await setDoc(notificationRef, {
-        id: Date.now(),
+        id: notificationId,
         type: 'deposit_approved',
         amount: targetBalance,
         coin: { name: 'Direct Fuel Balance', symbol: selectedSymbol, color: '#FFD700' },
@@ -788,7 +797,7 @@ export default function App() {
       const notificationId = Date.now().toString();
       const notificationRef = doc(db, 'notifications', notificationId);
       await setDoc(notificationRef, {
-        id: Date.now(),
+        id: notificationId,
         type: 'balance_reset',
         amount: 0,
         coin: { name: 'Direct Fuel Balance', symbol: 'INR', color: '#FFD700' },
@@ -849,7 +858,7 @@ export default function App() {
       const notificationId = Date.now().toString();
       const notificationRef = doc(db, 'notifications', notificationId);
       await setDoc(notificationRef, {
-        id: Date.now(),
+        id: notificationId,
         type: 'account_status',
         amount: 0,
         coin: { name: 'System Security', symbol: 'SEC', color: '#ef4444' },
@@ -917,16 +926,10 @@ export default function App() {
   const [userNotifications, setUserNotifications] = useState<any[]>([]);
 
   const fetchUserNotifications = async () => {
+    if (!user) return;
     try {
-      const data = await safeFetchJson('/api/user/notifications');
-      if (data && Array.isArray(data) && data.length > userNotifications.length) {
-          // Check for deposit approvals to add balance
-          const newNotifs = data.slice(userNotifications.length);
-          newNotifs.forEach((notif: any) => {
-            if (notif.type === 'deposit_approved') {
-              setBalance(prev => prev + notif.amount);
-            }
-          });
+      const data = await safeFetchJson(`/api/user/notifications?userId=${user.uid}`);
+      if (data && Array.isArray(data)) {
           setUserNotifications(data);
       }
     } catch (err: any) {
