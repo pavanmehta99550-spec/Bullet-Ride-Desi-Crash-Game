@@ -672,7 +672,7 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  function generateRoundData() {
+  function generateRoundData(shouldConsume = false) {
     let crashPoint: number;
     let crashReason: string;
     let isOverride = false;
@@ -682,6 +682,12 @@ async function startServer() {
       crashReason = nextForcedReason || "Admin Override 🛠️";
       isOverride = true;
       console.log(`[ROUND] Using Override: ${crashPoint}x - ${crashReason}`);
+      
+      if (shouldConsume) {
+        nextForcedCrash = null;
+        nextForcedReason = null;
+        console.log(`[ROUND] Override consumed.`);
+      }
     } else {
       const rand = Math.random();
       let cp;
@@ -701,12 +707,12 @@ async function startServer() {
   }
 
   app.post("/api/round/get-data", (req, res) => {
-    res.json(generateRoundData());
+    res.json(generateRoundData(false));
   });
 
   // The requested backend endpoint
   app.post("/api/round/start", (req, res) => {
-    res.json(generateRoundData());
+    res.json(generateRoundData(true));
   });
 
   // API 404 handler - MUST be before Vite/Static fallback

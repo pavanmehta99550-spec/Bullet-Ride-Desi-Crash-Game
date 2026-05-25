@@ -57,6 +57,7 @@ export default function App() {
   const [crashReason, setCrashReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<GameHistory[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [betAmount, setBetAmount] = useState(500);
   const [balance, setBalance] = useState(0);
   const [activeCoin, setActiveCoin] = useState<string>('INR');
@@ -167,6 +168,7 @@ export default function App() {
       } else {
         setUser(null);
         setBalance(0);
+        setHistory([]); // Clear history on signout
         setActiveCoin('INR');
         setCoinBalances({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
         setWithdrawableBalance(0);
@@ -216,17 +218,37 @@ export default function App() {
       orderBy('createdAt', 'desc'),
       limit(10)
     );
+    setIsHistoryLoading(true);
     const unsub = onSnapshot(q, (snapshot) => {
       console.log("History snapshot received:", snapshot.size, "docs");
-      const historyData = snapshot.docs.map(doc => ({
-        id: parseInt(doc.id),
-        multiplier: doc.data().multiplier,
-        time: new Date(doc.data().timestamp?.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }));
+      const historyData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        let timeStr = 'Just now';
+        
+        if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+          try {
+            timeStr = data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } catch (e) {
+            console.error("Error formatting history timestamp:", e);
+          }
+        } else if (data.createdAt) {
+          timeStr = new Date(data.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        return {
+          id: parseInt(doc.id) || Date.now(), // Ensure it's a number for GameHistory interface
+          multiplier: data.multiplier || 0,
+          time: timeStr
+        };
+      });
       console.log("New history data:", historyData);
       setHistory(historyData);
+      setIsHistoryLoading(false);
     });
-    return () => unsub();
+    return () => {
+      unsub();
+      setIsHistoryLoading(true);
+    };
   }, [user?.uid]);
 
   const startRound = async (isAutoStart = false) => {
@@ -275,6 +297,11 @@ export default function App() {
       const { crashPoint, crashReason, isOverride } = nextRoundData.current;
       console.log(`[GAME] Starting round with ${isOverride ? 'OVERRIDE' : 'RANDOM'} crash point: ${crashPoint}x`);
       
+      // If it was an override, notify server to consume it so it doesn't repeat
+      if (isOverride) {
+        fetch('/api/admin/consume-override', { method: 'POST' }).catch(e => console.warn("Failed to consume override:", e));
+      }
+
       // Update refs directly to avoid state race condition
       crashPointRef.current = crashPoint;
       setCrashPoint(crashPoint);
@@ -2016,8 +2043,13 @@ export default function App() {
                   </span>
                 </motion.div>
               ))}
-              {history.length === 0 && (
+              {history.length === 0 && !isHistoryLoading && (
                 <div className="text-center py-8 text-zinc-600 italic text-sm">No rides yet...</div>
+              )}
+              {isHistoryLoading && (
+                <div className="flex justify-center py-8">
+                  <RefreshCw className="w-5 h-5 text-zinc-700 animate-spin" />
+                </div>
               )}
             </AnimatePresence>
           </div>
