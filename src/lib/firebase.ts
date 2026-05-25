@@ -124,6 +124,7 @@ export async function saveGameHistory(userId: string, result: {
     const gameData = {
       id: gameId,
       timestamp: serverTimestamp(),
+      createdAt: Date.now(), // Fallback for easier sorting
       ...result
     };
     await setDoc(historyRef, gameData);

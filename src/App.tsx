@@ -213,7 +213,7 @@ export default function App() {
     if (!user) return;
     const q = query(
       collection(db, 'users', user.uid, 'history'),
-      orderBy('timestamp', 'desc'),
+      orderBy('createdAt', 'desc'),
       limit(10)
     );
     const unsub = onSnapshot(q, (snapshot) => {
@@ -708,14 +708,13 @@ export default function App() {
         message: `Admin has set your balance directly to ${targetBalance} in ${selectedSymbol}! ✅`
       });
 
-      // Invoke server-side API
-      fetch('/api/admin/user/update-balance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, amountToAdd: targetBalance, coinSymbol: selectedSymbol })
-      }).catch(err => {
-        console.warn("Non-blocking server webhook balance-update notify:", err);
-      });
+      // Update balances directly via Firestore client (rules permit this for admins)
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, {
+        walletBalance: selectedSymbol === 'INR' ? targetBalance : undefined,
+        coinBalances: { [selectedSymbol]: targetBalance },
+        updatedAt: serverTimestamp()
+      }, { merge: true });
 
       setAdminStatus(`User Fuel Balance SET! ✅ (${selectedSymbol})`);
       setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
