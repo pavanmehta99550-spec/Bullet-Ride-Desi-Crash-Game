@@ -216,7 +216,7 @@ export default function App() {
     const q = query(
       collection(db, 'users', user.uid, 'history'),
       orderBy('createdAt', 'desc'),
-      limit(10)
+      limit(30)
     );
     setIsHistoryLoading(true);
     const unsub = onSnapshot(q, (snapshot) => {
@@ -225,18 +225,21 @@ export default function App() {
         const data = doc.data();
         let timeStr = 'Just now';
         
-        if (data.timestamp && typeof data.timestamp.toDate === 'function') {
-          try {
-            timeStr = data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          } catch (e) {
-            console.error("Error formatting history timestamp:", e);
-          }
-        } else if (data.createdAt) {
-          timeStr = new Date(data.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        // Priority to data.createdAt for immediate feedback, then server timestamp
+        const dateObj = data.createdAt ? new Date(data.createdAt) : (data.timestamp?.toDate() || new Date());
+        try {
+          timeStr = dateObj.toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit',
+            hour12: true 
+          });
+        } catch (e) {
+          console.error("Error formatting history timestamp:", e);
         }
 
         return {
-          id: parseInt(doc.id) || Date.now(), // Ensure it's a number for GameHistory interface
+          id: parseInt(doc.id) || Date.now(),
           multiplier: data.multiplier || 0,
           time: timeStr
         };
@@ -1642,13 +1645,13 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-800">
-                            {history.map((ride, idx) => (
-                              <tr key={idx} className="hover:bg-white/5 transition-colors">
-                                <td className="p-3 font-mono text-zinc-400">{ride.time}</td>
-                                <td className="p-3 font-black text-right italic" style={{ color: ride.multiplier >= 1 ? '#FFD700' : '#ef4444' }}>
-                                  {ride.multiplier.toFixed(2)}x
-                                </td>
-                              </tr>
+                             {history.map((ride) => (
+                               <tr key={ride.id} className="hover:bg-white/5 transition-colors">
+                                 <td className="p-3 font-mono text-zinc-400">{ride.time}</td>
+                                 <td className="p-3 font-black text-right italic" style={{ color: ride.multiplier >= 1.5 ? '#22c55e' : '#ef4444' }}>
+                                   {ride.multiplier.toFixed(2)}x
+                                 </td>
+                               </tr>
                             ))}
                           </tbody>
                         </table>
@@ -2023,11 +2026,11 @@ export default function App() {
             <History className="w-3 h-3" /> Recent Pit Stops
           </h2>
           <div 
-            className="space-y-2 max-h-52 md:max-h-[360px] overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800"
+            className="flex-1 space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800"
             onTouchMove={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
           >
-            <AnimatePresence initial={false}>
+            <AnimatePresence initial={false} mode="popLayout">
               {history.map((item) => (
                 <motion.div 
                   key={item.id}
