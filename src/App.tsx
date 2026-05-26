@@ -18,7 +18,7 @@ import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
 
 interface GameHistory {
-  id: number;
+  id: string | number;
   multiplier: number;
   time: string;
 }
@@ -239,13 +239,13 @@ export default function App() {
         }
 
         return {
-          id: parseInt(doc.id) || Date.now(),
+          id: doc.id,
           multiplier: data.multiplier || 0,
           time: timeStr
         };
       });
       console.log("New history data:", historyData);
-      setHistory(historyData);
+      setHistory(historyData as any);
       setIsHistoryLoading(false);
     });
     return () => {
@@ -2012,15 +2012,15 @@ export default function App() {
         </div>
       ) : (
         /* Main Gameplay Area */
-        <main className="flex-1 flex flex-col md:flex-row h-full">
+        <main className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
         
         {/* Left Side Panel: History */}
-        <aside className="w-full md:w-64 border-r border-[#333] flex flex-col p-4 bg-[#141414]">
+        <aside className="w-full md:w-64 border-r border-[#333] flex flex-col p-4 bg-[#141414] overflow-hidden">
           <h2 className="text-[10px] uppercase tracking-[0.2em] mb-4 text-[#666] font-bold flex items-center gap-2">
             <History className="w-3 h-3" /> Recent Pit Stops
           </h2>
           <div 
-            className="flex-1 space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800"
+            className="flex-1 h-[200px] md:h-auto space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800"
             onTouchMove={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
           >

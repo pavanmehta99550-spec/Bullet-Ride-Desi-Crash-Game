@@ -8,6 +8,10 @@
 
 @layer base {
   body {
-    @apply bg-[#0F0F0F] text-[#F5F5F5] antialiased;
+    @apply bg-[#0F0F0F] text-[#F5F5F5] antialiased overflow-hidden;
+    overscroll-behavior: none;
+    height: 100%;
+    position: fixed;
+    width: 100%;
   }
 }
