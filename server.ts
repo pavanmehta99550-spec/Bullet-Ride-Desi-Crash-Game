@@ -657,19 +657,25 @@ async function startServer() {
 
   app.post("/api/admin/set-crash", (req, res) => {
     const { crashPoint, crashReason } = req.body;
-    if (crashPoint) {
-      nextForcedCrash = parseFloat(crashPoint);
+    if (crashPoint !== undefined && crashPoint !== null && crashPoint !== "") {
+      const parsed = parseFloat(crashPoint);
+      if (isNaN(parsed) || parsed < 1) {
+        return res.status(400).json({ error: "Invalid crash point. Must be >= 1.00" });
+      }
+      nextForcedCrash = parsed;
       nextForcedReason = crashReason || "Admin Override 🛠️";
-      res.json({ status: "ok", message: `Next crash set to ${nextForcedCrash}x` });
+      console.log(`[ADMIN] Override Set: ${nextForcedCrash}x - ${nextForcedReason}`);
+      res.json({ status: "ok", message: `Physics Modified: Next Ride will crash at ${nextForcedCrash}x! ✅` });
     } else {
-      res.status(400).json({ error: "Missing crashPoint" });
+      res.status(400).json({ error: "Missing crashPoint value" });
     }
   });
 
   app.post("/api/admin/consume-override", (req, res) => {
+    console.log(`[ADMIN] Manually clearing override: ${nextForcedCrash}x`);
     nextForcedCrash = null;
     nextForcedReason = null;
-    res.json({ status: "ok" });
+    res.json({ status: "ok", message: "Override cleared!" });
   });
 
   function generateRoundData(shouldConsume = false) {

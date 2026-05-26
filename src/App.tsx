@@ -505,12 +505,10 @@ export default function App() {
     if (newPasscodeInput.length >= 3) {
       setAdminPasscode(newPasscodeInput);
       localStorage.setItem('rider_admin_pin', newPasscodeInput);
-      setAdminStatus("Passcode Updated Successfully! ✅");
+      showAdminStatus("Passcode Updated Successfully! ✅");
       setNewPasscodeInput('');
-      setTimeout(() => setAdminStatus(null), 3000);
     } else {
-      setAdminStatus("PIN must be at least 3 digits! ❌");
-      setTimeout(() => setAdminStatus(null), 3000);
+      showAdminStatus("PIN must be at least 3 digits! ❌", 'error');
     }
   };
 
@@ -563,8 +561,7 @@ export default function App() {
         setSelectedCoin(null);
         setWithdrawStep('coin');
         setUserWithdrawAddress('');
-        setAdminStatus("Withdrawal Request Sent! 💸");
-        setTimeout(() => setAdminStatus(null), 3000);
+        showAdminStatus("Withdrawal Request Sent! 💸");
       }
     } catch (err) {
       setError("Withdrawal request failed!");
@@ -596,8 +593,7 @@ export default function App() {
         setIsDepositModalOpen(false);
         setSelectedCoin(null);
         setDepositTxId('');
-        setAdminStatus("Deposit Request Sent! Admin verify karega. ⏳");
-        setTimeout(() => setAdminStatus(null), 5000);
+        showAdminStatus("Deposit Request Sent! Admin verify karega. ⏳", 'success', 5000);
       }
     } catch (err) {
       setError("Request fail ho gayi!");
@@ -607,7 +603,14 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminCrashPoint, setAdminCrashPoint] = useState('2.00');
   const [adminCrashReason, setAdminCrashReason] = useState('Admin forced crash!');
-  const [adminStatus, setAdminStatus] = useState<string | null>(null);
+  const [adminStatus, setAdminStatus] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+
+  const showAdminStatus = (message: string, type: 'success' | 'error' = 'success', duration = 3000) => {
+    setAdminStatus({ message, type });
+    if (duration > 0) {
+      setTimeout(() => setAdminStatus(null), duration);
+    }
+  };
   const [adminWithdrawals, setAdminWithdrawals] = useState<any[]>([]);
   const [adminDeposits, setAdminDeposits] = useState<any[]>([]);
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
@@ -636,21 +639,19 @@ export default function App() {
   const handleAddUserBalance = async (userId: string) => {
     const amountVal = userBalanceInputs[userId];
     if (!amountVal) {
-      setAdminStatus("Bhai, balance amount dalo! 💸");
-      setTimeout(() => setAdminStatus(null), 3000);
+      showAdminStatus("Bhai, balance amount dalo! 💸", 'error');
       return;
     }
     const val = parseFloat(amountVal);
     if (isNaN(val) || val < 0) {
-      setAdminStatus("Incorrect Amount! Positive number (or 0) dalo. ❌");
-      setTimeout(() => setAdminStatus(null), 3000);
+      showAdminStatus("Incorrect Amount! Positive number (or 0) dalo. ❌", 'error');
       return;
     }
 
     const selectedSymbol = userCoinSelections[userId] || 'INR';
     
     try {
-      setAdminStatus("Updating Balance... ⏳");
+      showAdminStatus("Updating Balance... ⏳", 'success', 0);
       const res = await fetch('/api/admin/user/update-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -658,31 +659,28 @@ export default function App() {
       });
       
       if (res.ok) {
-        setAdminStatus(`Fuel Balance Added Successfully! ✅ (${selectedSymbol})`);
+        showAdminStatus(`Fuel Balance Added Successfully! ✅ (${selectedSymbol})`, 'success', 5000);
         setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
         fetchAdminUsers();
-        setTimeout(() => setAdminStatus(null), 5000);
       } else {
         const errData = await res.json();
         throw new Error(errData.error || "API rejection");
       }
     } catch (err: any) {
       console.error("Balance update failed:", err);
-      setAdminStatus(`Failed to update: ${err.message || String(err)} ❌`);
+      showAdminStatus(`Failed to update: ${err.message || String(err)} ❌`, 'error');
     }
   };
 
   const handleSetUserBalance = async (userId: string) => {
     const amountVal = userBalanceInputs[userId];
     if (amountVal === undefined || amountVal === '') {
-      setAdminStatus("Bhai, balance amount dalo! 💸");
-      setTimeout(() => setAdminStatus(null), 3000);
+      showAdminStatus("Bhai, balance amount dalo! 💸", 'error');
       return;
     }
     const val = parseFloat(amountVal);
     if (isNaN(val) || val < 0) {
-      setAdminStatus("Incorrect Amount! Positive number (or 0) dalo. ❌");
-      setTimeout(() => setAdminStatus(null), 3000);
+      showAdminStatus("Incorrect Amount! Positive number (or 0) dalo. ❌", 'error');
       return;
     }
 
@@ -714,7 +712,7 @@ export default function App() {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      setAdminStatus(`User Fuel Balance SET! ✅ (${selectedSymbol})`);
+      showAdminStatus(`User Fuel Balance SET! ✅ (${selectedSymbol})`);
       setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
       
       // Optimistically update the local state
@@ -742,19 +740,16 @@ export default function App() {
           body: JSON.stringify({ userId, amountToAdd: val, coinSymbol: selectedSymbol })
         });
         if (res.ok) {
-          setAdminStatus(`User Balance Set Successfully (via API)! ✅`);
+          showAdminStatus(`User Balance Set Successfully (via API)! ✅`);
           setUserBalanceInputs(prev => ({ ...prev, [userId]: '' }));
           fetchAdminUsers();
-          setTimeout(() => setAdminStatus(null), 5000);
         } else {
           const errData = await res.json();
-          setAdminStatus(errData.error || "Set fail ho gaya! ❌");
-          setTimeout(() => setAdminStatus(null), 5000);
+          showAdminStatus(errData.error || "Set fail ho gaya! ❌", 'error');
         }
       } catch (fallbackErr: any) {
         console.error("Direct balance fallback failed:", fallbackErr);
-        setAdminStatus("Failed to set: " + (err.message || String(err)));
-        setTimeout(() => setAdminStatus(null), 5000);
+        showAdminStatus("Failed to set: " + (err.message || String(err)), 'error');
       }
     }
   };
@@ -794,9 +789,8 @@ export default function App() {
         console.warn("Non-blocking server reset webhook notify:", err);
       });
 
-      setAdminStatus("User Fuel Balance Reset to ₹0! 🛠️✅");
+      showAdminStatus("User Fuel Balance Reset to ₹0! 🛠️✅");
       fetchAdminUsers();
-      setTimeout(() => setAdminStatus(null), 5000);
     } catch (err: any) {
       console.error("Reset balance failed, using backend fallback:", err);
       try {
@@ -806,16 +800,13 @@ export default function App() {
           body: JSON.stringify({ userId })
         });
         if (res.ok) {
-          setAdminStatus("User Balance Reset to ₹0 Successfully (via API)! ✅");
+          showAdminStatus("User Balance Reset to ₹0 Successfully (via API)! ✅");
           fetchAdminUsers();
-          setTimeout(() => setAdminStatus(null), 5000);
         } else {
-          setAdminStatus("Reset balance via API failed! ❌");
-          setTimeout(() => setAdminStatus(null), 5000);
+          showAdminStatus("Reset balance via API failed! ❌", 'error');
         }
       } catch (fallbackErr) {
-        setAdminStatus("Failed to reset balance: " + (err.message || String(err)));
-        setTimeout(() => setAdminStatus(null), 5000);
+        showAdminStatus("Failed to reset balance: " + (err.message || String(err)), 'error');
       }
     }
   };
@@ -858,9 +849,8 @@ export default function App() {
         console.warn("Non-blocking server status toggle webhook notify:", err);
       });
 
-      setAdminStatus(`Rider ${actionLabel}ed Successfully! ✅`);
+      showAdminStatus(`Rider ${actionLabel}ed Successfully! ✅`);
       fetchAdminUsers();
-      setTimeout(() => setAdminStatus(null), 5000);
     } catch (err: any) {
       console.error("Toggle block status failed, trying backend fallback:", err);
       // ... (rest of fallback)
@@ -871,16 +861,13 @@ export default function App() {
           body: JSON.stringify({ userId, isBlocked: targetBlocked })
         });
         if (res.ok) {
-          setAdminStatus(`Rider ${actionLabel}ed Successfully (via API)! ✅`);
+          showAdminStatus(`Rider ${actionLabel}ed Successfully (via API)! ✅`);
           fetchAdminUsers();
-          setTimeout(() => setAdminStatus(null), 5000);
         } else {
-          setAdminStatus(`Failed to ${actionLabel} rider via API! ❌`);
-          setTimeout(() => setAdminStatus(null), 5000);
+          showAdminStatus(`Failed to ${actionLabel} rider via API! ❌`, 'error');
         }
       } catch (fallbackErr) {
-        setAdminStatus("Failed to toggle block: " + (err.message || String(err)));
-        setTimeout(() => setAdminStatus(null), 5000);
+        showAdminStatus("Failed to toggle block: " + (err.message || String(err)), 'error');
       }
     }
   };
@@ -945,12 +932,11 @@ export default function App() {
         body: JSON.stringify({ requestId })
       });
       if (res.ok) {
-        setAdminStatus("Withdrawal Approved! ✅");
+        showAdminStatus("Withdrawal Approved! ✅");
         fetchAdminWithdrawals();
-        setTimeout(() => setAdminStatus(null), 3000);
       }
     } catch (err) {
-      setAdminStatus("Approval failed ❌");
+      showAdminStatus("Approval failed ❌", 'error');
     }
   };
 
@@ -975,12 +961,11 @@ export default function App() {
           console.error("Firestore balance update failed for user", userId);
         }
 
-        setAdminStatus("Deposit Approved & Balance Added! ✅");
+        showAdminStatus("Deposit Approved & Balance Added! ✅");
         fetchAdminDeposits();
-        setTimeout(() => setAdminStatus(null), 3000);
       }
     } catch (err) {
-      setAdminStatus("Approval failed ❌");
+      showAdminStatus("Approval failed ❌", 'error');
     }
   };
 
@@ -991,40 +976,48 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ coins })
       });
-      setAdminStatus(data.message);
+      showAdminStatus(data.message);
       fetchCoins(); // Refresh to sync
-      setTimeout(() => setAdminStatus(null), 3000);
     } catch (err: any) {
-      setAdminStatus("Error updating addresses");
+      showAdminStatus("Error updating addresses", 'error');
       console.warn("Error updating addresses:", err.message || err);
     }
   };
 
   const setAdminOverride = async () => {
+    const crashVal = parseFloat(adminCrashPoint);
+    if (isNaN(crashVal) || crashVal < 1) {
+      setAdminStatus({ message: "Bhai, 1.00 se kam nahi ho sakta! 📉", type: 'error' });
+      setTimeout(() => setAdminStatus(null), 3000);
+      return;
+    }
+
     try {
       const data = await safeFetchJson('/api/admin/set-crash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ crashPoint: adminCrashPoint, crashReason: adminCrashReason })
+        body: JSON.stringify({ 
+          crashPoint: crashVal.toString(), 
+          crashReason: adminCrashReason.trim() 
+        })
       });
-      setAdminStatus(data.message);
-      setTimeout(() => setAdminStatus(null), 3000);
-      prefetchNextRound(); // Force pre-fetch the next round with the new override
+      setAdminStatus({ message: data.message, type: 'success' });
+      setTimeout(() => setAdminStatus(null), 4000);
+      prefetchNextRound(); // Force update next round data with this override
     } catch (err: any) {
-      setAdminStatus("Error setting override");
-      console.warn("Error setting override:", err.message || err);
+      setAdminStatus({ message: "System Error: Physics apply nahi hui!", type: 'error' });
+      console.error("Error setting override:", err.message || err);
     }
   };
 
   const clearAdminOverride = async () => {
     try {
-      await fetch('/api/admin/consume-override', { method: 'POST' });
-      setAdminStatus("Physics Override cleared! ✅");
+      const data = await safeFetchJson('/api/admin/consume-override', { method: 'POST' });
+      setAdminStatus({ message: "Physics Restored to Normal! ✅", type: 'success' });
       setTimeout(() => setAdminStatus(null), 3000);
       prefetchNextRound();
     } catch (err: any) {
-      setAdminStatus("Error clearing override");
-      console.warn("Error clearing override:", err.message || err);
+      setAdminStatus({ message: "Clear fail ho gaya!", type: 'error' });
     }
   };
 
@@ -1444,7 +1437,9 @@ export default function App() {
                       Clear Override
                     </button>
                     {adminStatus && (
-                      <p className="text-green-500 font-bold animate-pulse text-sm">{(adminStatus as string)}</p>
+                      <p className={`font-black uppercase italic tracking-widest text-xs animate-pulse ${adminStatus.type === 'error' ? 'text-red-500' : 'text-[#FFD700]'}`}>
+                        {adminStatus.message}
+                      </p>
                     )}
                   </div>
                   <p className="mt-4 text-[10px] text-zinc-600 uppercase tracking-widest italic">
@@ -1787,8 +1782,7 @@ export default function App() {
                           <button 
                             onClick={() => {
                                 navigator.clipboard.writeText(selectedCoin.address);
-                                setAdminStatus("Address Copied! ✅");
-                                setTimeout(() => setAdminStatus(null), 2000);
+                                showAdminStatus("Address Copied! ✅");
                             }}
                             className="absolute right-2 top-1/2 -translate-y-1/2 bg-zinc-800 text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                           >
