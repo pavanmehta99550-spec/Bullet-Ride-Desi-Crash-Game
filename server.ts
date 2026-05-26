@@ -11,6 +11,37 @@ async function startServer() {
   // Use JSON parsing middleware early
   app.use(express.json());
 
+  // --- CRITICAL: ADMIN PHYSICS ROUTES (Moved here to prevent 404/shadowing) ---
+  app.post("/api/admin/set-crash", (req, res) => {
+    console.log("[ADMIN-API] POST /api/admin/set-crash triggered");
+    console.log("[ADMIN-API] Body:", JSON.stringify(req.body));
+    const { crashPoint, crashReason } = req.body;
+    
+    if (crashPoint === undefined || crashPoint === null || crashPoint === "") {
+        console.warn("[ADMIN-API] FAILED: Missing crashPoint");
+        return res.status(400).json({ error: "Missing crashPoint value" });
+    }
+
+    const parsed = parseFloat(crashPoint);
+    if (isNaN(parsed) || parsed < 1) {
+        console.warn("[ADMIN-API] FAILED: Invalid crashPoint value", crashPoint);
+        return res.status(400).json({ error: "Invalid crashPoint. Must be >= 1.00" });
+    }
+
+    nextForcedCrash = parsed;
+    nextForcedReason = crashReason || "Admin Override 🛠️";
+    console.log(`[ADMIN-API] SUCCESS: Forced crash set to ${nextForcedCrash}x`);
+    res.json({ status: "ok", message: `Physics Modified: Next Ride will crash at ${nextForcedCrash}x! ✅` });
+  });
+
+  app.post("/api/admin/consume-override", (req, res) => {
+    console.log(`[ADMIN-API] Manual clear triggered`);
+    nextForcedCrash = null;
+    nextForcedReason = null;
+    res.json({ status: "ok", message: "Override cleared!" });
+  });
+  // --------------------------------------------------------------------------
+
   // Add Health Check early
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
@@ -653,30 +684,6 @@ async function startServer() {
       console.log(`Muted Firestore toggle block fallback triggered for ${userId}`);
       res.json({ status: "ok", message: `Successfully updated block status to ${isBlocked} (client sync)!` });
     }
-  });
-
-  app.post("/api/admin/set-crash", (req, res) => {
-    console.log("[ADMIN] Received set-crash body:", req.body);
-    const { crashPoint, crashReason } = req.body;
-    if (crashPoint !== undefined && crashPoint !== null && crashPoint !== "") {
-      const parsed = parseFloat(crashPoint);
-      if (isNaN(parsed) || parsed < 1) {
-        return res.status(400).json({ error: "Invalid crash point. Must be >= 1.00" });
-      }
-      nextForcedCrash = parsed;
-      nextForcedReason = crashReason || "Admin Override 🛠️";
-      console.log(`[ADMIN] Override Set: ${nextForcedCrash}x - ${nextForcedReason}`);
-      res.json({ status: "ok", message: `Physics Modified: Next Ride will crash at ${nextForcedCrash}x! ✅` });
-    } else {
-      res.status(400).json({ error: "Missing crashPoint value" });
-    }
-  });
-
-  app.post("/api/admin/consume-override", (req, res) => {
-    console.log(`[ADMIN] Manually clearing override: ${nextForcedCrash}x`);
-    nextForcedCrash = null;
-    nextForcedReason = null;
-    res.json({ status: "ok", message: "Override cleared!" });
   });
 
   function generateRoundData(shouldConsume = false) {

@@ -1040,7 +1040,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen h-[100dvh] w-full bg-[#0F0F0F] text-[#F5F5F5] font-sans border-zinc-800 relative overflow-hidden overscroll-none">
+    <div className="flex flex-col h-screen h-[100dvh] w-full bg-[#0F0F0F] text-[#F5F5F5] font-sans border-zinc-800 relative overflow-hidden overscroll-none touch-none">
       {/* Auth Modal */}
       <AuthModal 
         isOpen={showAuthModal} 
@@ -2034,7 +2034,11 @@ export default function App() {
           <div 
             className="flex-1 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800 p-4 h-[120px] md:h-full"
             onTouchStart={(e) => {
-              // Ensure we don't trigger pull-to-refresh on certain browsers
+              // Allow scrolling only within this container
+              e.stopPropagation();
+            }}
+            onTouchMove={(e) => {
+                e.stopPropagation();
             }}
           >
             <AnimatePresence initial={false} mode="popLayout">
