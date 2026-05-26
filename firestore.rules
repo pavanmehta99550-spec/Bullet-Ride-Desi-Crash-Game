@@ -47,7 +47,8 @@ service cloud.firestore {
 
     function isValidGameResult(data) {
       return data.id is string && data.id.size() <= 100
-        && data.timestamp is timestamp
+        && (data.timestamp is timestamp || data.timestamp == null)
+        && (data.createdAt is number || !('createdAt' in data))
         && data.betAmount is number
         && data.multiplier is number
         && data.winAmount is number
@@ -64,7 +65,7 @@ service cloud.firestore {
         && isValidId(userId)
         && isValidUser(incoming(), userId)
         && incoming().keys().hasAll(['uid', 'email', 'displayName', 'walletBalance', 'createdAt'])
-        && incoming().keys().size() == 5;
+        && incoming().keys().size() >= 5;
 
       allow update: if isAdmin();
       allow update: if isOwner(userId)
@@ -84,7 +85,7 @@ service cloud.firestore {
         && isValidId(gameId)
         && isValidGameResult(incoming())
         && incoming().keys().hasAll(['id', 'timestamp', 'betAmount', 'multiplier', 'winAmount', 'status'])
-        && incoming().keys().size() == 6;
+        && incoming().keys().size() >= 6 && incoming().keys().size() <= 8;
       
       // History is immutable
       allow update, delete: if false;

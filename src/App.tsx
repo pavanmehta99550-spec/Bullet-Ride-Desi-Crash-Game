@@ -225,8 +225,16 @@ export default function App() {
         const data = doc.data();
         let timeStr = 'Just now';
         
-        // Priority to data.createdAt for immediate feedback, then server timestamp
-        const dateObj = data.createdAt ? new Date(data.createdAt) : (data.timestamp?.toDate() || new Date());
+        // Priority to data.createdAt (local number), then server timestamp
+        let dateObj: Date;
+        if (data.createdAt) {
+          dateObj = new Date(data.createdAt);
+        } else if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+          dateObj = data.timestamp.toDate();
+        } else {
+          dateObj = new Date();
+        }
+
         try {
           timeStr = dateObj.toLocaleTimeString([], { 
             hour: '2-digit', 
@@ -235,7 +243,8 @@ export default function App() {
             hour12: true 
           });
         } catch (e) {
-          console.error("Error formatting history timestamp:", e);
+          dateObj = new Date();
+          timeStr = dateObj.toLocaleTimeString();
         }
 
         return {
@@ -1031,7 +1040,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen w-full bg-[#0F0F0F] text-[#F5F5F5] font-sans border-zinc-800 relative">
+    <div className="flex flex-col h-screen h-[100dvh] w-full bg-[#0F0F0F] text-[#F5F5F5] font-sans border-zinc-800 relative overflow-hidden overscroll-none">
       {/* Auth Modal */}
       <AuthModal 
         isOpen={showAuthModal} 
@@ -2012,17 +2021,21 @@ export default function App() {
         </div>
       ) : (
         /* Main Gameplay Area */
-        <main className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
+        <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
         {/* Left Side Panel: History */}
-        <aside className="w-full md:w-64 border-r border-[#333] flex flex-col p-4 bg-[#141414] overflow-hidden">
-          <h2 className="text-[10px] uppercase tracking-[0.2em] mb-4 text-[#666] font-bold flex items-center gap-2">
-            <History className="w-3 h-3" /> Recent Pit Stops
-          </h2>
+        <aside className="w-full md:w-72 border-r border-[#333] flex flex-col bg-[#141414] overflow-hidden shrink-0">
+          <div className="p-4 border-b border-[#333]">
+            <h2 className="text-[10px] uppercase tracking-[0.2em] text-[#666] font-bold flex items-center gap-2">
+              <History className="w-3 h-3" /> Recent Pit Stops
+            </h2>
+          </div>
+
           <div 
-            className="flex-1 h-[200px] md:h-auto space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800"
-            onTouchMove={(e) => e.stopPropagation()}
-            onWheel={(e) => e.stopPropagation()}
+            className="flex-1 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800 p-4 h-[120px] md:h-full"
+            onTouchStart={(e) => {
+              // Ensure we don't trigger pull-to-refresh on certain browsers
+            }}
           >
             <AnimatePresence initial={false} mode="popLayout">
               {history.map((item) => (
@@ -2030,7 +2043,7 @@ export default function App() {
                   key={item.id}
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  className={`flex justify-between items-center p-3 bg-[#1A1A1A] border-l-4 ${
+                  className={`flex justify-between items-center p-3 mb-2 bg-[#1A1A1A] border-l-4 rounded-r shadow-sm transition-colors hover:bg-[#222] ${
                     item.multiplier > 2 ? 'border-green-500' : 'border-red-500'
                   }`}
                 >
@@ -2041,7 +2054,7 @@ export default function App() {
                 </motion.div>
               ))}
               {history.length === 0 && !isHistoryLoading && (
-                <div className="text-center py-8 text-zinc-600 italic text-sm">No rides yet...</div>
+                <div className="text-center py-8 text-zinc-600 italic text-sm">Waiting for the engine to start...</div>
               )}
               {isHistoryLoading && (
                 <div className="flex justify-center py-8">
