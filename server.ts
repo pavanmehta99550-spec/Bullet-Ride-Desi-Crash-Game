@@ -1,8 +1,23 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { initializeApp as initializeClientApp, getApps as getClientApps } from "firebase/app";
+import { 
+  getFirestore as getClientFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  updateDoc, 
+  deleteDoc, 
+  serverTimestamp, 
+  query,
+  where,
+  orderBy,
+  limit,
+  deleteField
+} from "firebase/firestore";
 import fs from "fs";
 
 async function startServer() {
@@ -20,43 +35,37 @@ async function startServer() {
     console.error("Failed to load firebase-applet-config.json:", err);
   }
 
-  // FORCE PROJECT ID for GCP Libraries (fix for internal project API issues)
-  if (firebaseConfig.projectId) {
-    process.env.GOOGLE_CLOUD_PROJECT = firebaseConfig.projectId;
-    process.env.GCP_PROJECT = firebaseConfig.projectId;
-    console.log(`[FIREBASE] Forcing GOOGLE_CLOUD_PROJECT: ${process.env.GOOGLE_CLOUD_PROJECT}`);
-  }
-
-  // Initialize Firebase Admin
+  // Initialize Firebase (Client SDK on Server for API Key support)
   let db: any = null;
-  const existingApps = getApps();
-  if (existingApps.length === 0 && firebaseConfig.projectId) {
+  if (firebaseConfig.apiKey) {
     try {
-      const adminApp = initializeApp({
-        projectId: firebaseConfig.projectId
-      });
-      // Use named database if provided, otherwise default
+      const clientApp = getClientApps().length === 0 
+        ? initializeClientApp({
+            apiKey: firebaseConfig.apiKey,
+            authDomain: firebaseConfig.authDomain,
+            projectId: firebaseConfig.projectId,
+            storageBucket: firebaseConfig.storageBucket,
+            messagingSenderId: firebaseConfig.messagingSenderId,
+            appId: firebaseConfig.appId
+          })
+        : getClientApps()[0];
+      
       const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)' 
         ? firebaseConfig.firestoreDatabaseId 
         : undefined;
-      
-      db = getFirestore(adminApp, dbId);
-      console.log(`[FIREBASE] Admin SDK initialized (Project: ${firebaseConfig.projectId}, DB: ${dbId || 'default'}).`);
+
+      db = getClientFirestore(clientApp, dbId);
+      console.log(`[FIREBASE] Client SDK initialized (Project: ${firebaseConfig.projectId}, DB: ${dbId || 'default'}).`);
 
       // Verify reachability
-      db.collection('game').limit(1).get().then(() => {
-          console.log("[FIREBASE] Verification: Managed to query collections. Admin Auth OK. ✅");
+      getDocs(query(collection(db, 'game'), limit(1))).then(() => {
+          console.log("[FIREBASE] Verification: Managed to query collections via API Key. ✅");
       }).catch(err => {
           console.error("[FIREBASE] Verification: FAILED to query collections.", (err as any).message);
       });
     } catch (err) {
-      console.error("[FIREBASE] Admin SDK Initialization failed:", err);
+      console.error("[FIREBASE] Client SDK Initialization failed:", err);
     }
-  } else if (existingApps.length > 0) {
-    const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)' 
-      ? firebaseConfig.firestoreDatabaseId 
-      : undefined;
-    db = getFirestore(existingApps[0], dbId);
   }
 
   // --- STATE VARIABLES ---
@@ -106,14 +115,14 @@ async function startServer() {
   // Sync state from Firestore (Non-blocking)
   if (db) {
     // Sync coins
-    db.collection('admin').doc('settings').get().then(snapshot => {
-      if (snapshot.exists && snapshot.data()?.cryptoCoins) cryptoCoins = snapshot.data()?.cryptoCoins;
+    getDoc(doc(db, 'admin', 'settings')).then(snapshot => {
+      if (snapshot.exists() && snapshot.data()?.cryptoCoins) cryptoCoins = snapshot.data()?.cryptoCoins;
     }).catch(console.error);
 
     // Sync other lists
     const fetchList = async (coll: string, target: any[]) => {
       try {
-        const snap = await db.collection(coll).get();
+        const snap = await getDocs(collection(db, coll));
         const list: any[] = [];
         snap.forEach(d => list.push(d.data()));
         list.sort((a, b) => a.id - b.id);
@@ -156,7 +165,7 @@ async function startServer() {
     const { coins } = req.body;
     if (coins && Array.isArray(coins)) {
       cryptoCoins = coins;
-      if (db) await db.collection('admin').doc('settings').set({ cryptoCoins: coins, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      if (db) await setDoc(doc(db, 'admin', 'settings'), { cryptoCoins: coins, updatedAt: serverTimestamp() }, { merge: true });
       res.json({ status: "ok", message: "Crypto addresses saved! ✅" });
     } else res.status(400).json({ error: "Invalid coins data" });
   });
@@ -166,7 +175,7 @@ async function startServer() {
     const { amount, coin, transactionId, userId } = req.body;
     const request = { id: Date.now(), amount: parseFloat(amount), coin, transactionId, userId, status: 'pending', timestamp: new Date().toISOString() };
     depositRequests.push(request);
-    if (db) await db.collection('deposits').doc(request.id.toString()).set(request);
+    if (db) await setDoc(doc(db, 'deposits', request.id.toString()), request);
     res.json({ status: "ok", message: "Deposit request submitted! Please wait for approval." });
   });
 
@@ -179,14 +188,14 @@ async function startServer() {
     
     request.status = 'approved';
     if (db) {
-       await db.collection('deposits').doc(requestId.toString()).update({ status: 'approved' });
+       await updateDoc(doc(db, 'deposits', requestId.toString()), { status: 'approved' });
        // Note: Balance is handled on client side in App.tsx but admin also pushes notification
        const notification = {
          id: Date.now().toString(), type: 'deposit_approved', amount: request.amount, coin: request.coin,
          userId: request.userId, timestamp: new Date().toISOString(),
          message: `Deposit of ₹${request.amount} via ${request.coin.symbol} was successful! Balance added.`
        };
-       await db.collection('notifications').doc(notification.id).set(notification);
+       await setDoc(doc(db, 'notifications', notification.id), notification);
        userNotifications.push(notification);
     }
     res.json({ status: "ok", message: "Deposit approved!" });
@@ -196,7 +205,7 @@ async function startServer() {
     const { amount, coin, userAddress, userId } = req.body;
     const request = { id: Date.now(), amount: parseFloat(amount), coin, userAddress, userId, status: 'pending', timestamp: new Date().toISOString() };
     withdrawalRequests.push(request);
-    if (db) await db.collection('withdrawals').doc(request.id.toString()).set(request);
+    if (db) await setDoc(doc(db, 'withdrawals', request.id.toString()), request);
     res.json({ status: "ok", message: "Withdrawal request submitted!" });
   });
 
@@ -208,13 +217,13 @@ async function startServer() {
     if (!request) return res.status(404).json({ error: "Request not found" });
     request.status = 'approved';
     if (db) {
-      await db.collection('withdrawals').doc(requestId.toString()).update({ status: 'approved' });
+      await updateDoc(doc(db, 'withdrawals', requestId.toString()), { status: 'approved' });
       const notification = {
         id: Date.now().toString(), type: 'withdrawal_approved', amount: request.amount, coin: request.coin,
         userId: request.userId, timestamp: new Date().toISOString(),
         message: `Withdrawal of ${request.amount} ${request.coin.symbol} was successful!`
       };
-      await db.collection('notifications').doc(notification.id).set(notification);
+      await setDoc(doc(db, 'notifications', notification.id), notification);
       userNotifications.push(notification);
     }
     res.json({ status: "ok", message: "Withdrawal approved!" });
@@ -229,7 +238,7 @@ async function startServer() {
   app.post("/api/user/notifications/delete", async (req, res) => {
     const { id } = req.body;
     userNotifications = userNotifications.filter(n => n.id.toString() !== id.toString());
-    if (db) await db.collection('notifications').doc(id.toString()).delete();
+    if (db) await deleteDoc(doc(db, 'notifications', id.toString()));
     res.json({ status: "ok" });
   });
 
@@ -237,7 +246,7 @@ async function startServer() {
   app.get("/api/admin/users", async (req, res) => {
     if (!db) return res.json([]);
     try {
-      const snap = await db.collection("users").get();
+      const snap = await getDocs(collection(db, "users"));
       const list: any[] = [];
       snap.forEach(doc => list.push({ ...doc.data(), uid: doc.id }));
       res.json(list);
@@ -249,19 +258,19 @@ async function startServer() {
   app.post("/api/admin/user/update-balance", async (req, res) => {
     const { userId, amountToAdd, coinSymbol } = req.body;
     if (db) {
-      const userRef = db.collection("users").doc(userId);
-      const userSnap = await userRef.get();
-      let coinBalances = userSnap.exists ? (userSnap.data()?.coinBalances || {}) : {};
+      const userRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userRef);
+      let coinBalances = userSnap.exists() ? (userSnap.data()?.coinBalances || {}) : {};
       const symbol = coinSymbol || "INR";
       coinBalances[symbol] = parseFloat((parseFloat(amountToAdd)).toFixed(8));
-      await userRef.set({ uid: userId, coinBalances, activeCoin: symbol, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await setDoc(userRef, { uid: userId, coinBalances, activeCoin: symbol, updatedAt: serverTimestamp() }, { merge: true });
       
       const notification = {
         id: Date.now().toString(), type: 'deposit_approved', amount: amountToAdd,
         coin: { symbol }, userId, timestamp: new Date().toISOString(),
         message: `Admin has updated your ${symbol} balance to ${amountToAdd}! ✅`
       };
-      await db.collection('notifications').doc(notification.id).set(notification);
+      await setDoc(doc(db, 'notifications', notification.id), notification);
       userNotifications.push(notification);
     }
     res.json({ status: "ok", message: "Balance updated!" });
@@ -270,11 +279,11 @@ async function startServer() {
   app.post("/api/admin/user/reset-balance", async (req, res) => {
     const { userId } = req.body;
     if (db) {
-      await db.collection("users").doc(userId).set({ 
+      await setDoc(doc(db, "users", userId), { 
         walletBalance: 0, 
         coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 },
         activeCoin: 'INR',
-        updatedAt: FieldValue.serverTimestamp()
+        updatedAt: serverTimestamp()
       }, { merge: true });
     }
     res.json({ status: "ok", message: "Balance reset!" });
@@ -282,7 +291,7 @@ async function startServer() {
 
   app.post("/api/admin/user/toggle-block", async (req, res) => {
     const { userId, isBlocked } = req.body;
-    if (db) await db.collection("users").doc(userId).set({ isBlocked, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    if (db) await setDoc(doc(db, "users", userId), { isBlocked, updatedAt: serverTimestamp() }, { merge: true });
     res.json({ status: "ok", message: "User status updated!" });
   });
 
@@ -300,9 +309,9 @@ async function startServer() {
   async function broadcastGlobalState() {
     if (!db) return;
     try {
-      await db.collection('game').doc('current').set({
+      await setDoc(doc(db, 'game', 'current'), {
         ...globalRound,
-        serverTime: FieldValue.serverTimestamp()
+        serverTime: serverTimestamp()
       });
       broadcastFailureCount = 0; // Reset on success
     } catch (e) {
@@ -349,11 +358,11 @@ async function startServer() {
         
         // Save to Global History
         if (db) {
-          db.collection('globalHistory').doc(globalRound.roundId).set({
+          setDoc(doc(db, 'globalHistory', globalRound.roundId), {
             id: globalRound.roundId,
             multiplier: globalRound.crashPoint,
             createdAt: now,
-            timestamp: FieldValue.serverTimestamp()
+            timestamp: serverTimestamp()
           }).catch(console.error);
         }
       }
