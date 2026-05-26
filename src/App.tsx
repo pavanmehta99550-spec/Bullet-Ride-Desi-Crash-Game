@@ -2156,105 +2156,160 @@ export default function App() {
           
           {/* Real-time Growth Chart (Aviator Style) */}
           <div className="absolute inset-0 z-0 p-12 pointer-events-none">
-            <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="chartGradient" x1="0" y1="1" x2="0" y2="0">
-                  <stop offset="0%" stopColor={isCrashed ? "#EF4444" : "#FFD700"} stopOpacity="0" />
-                  <stop offset="100%" stopColor={isCrashed ? "#EF4444" : "#FFD700"} stopOpacity="0.4" />
-                </linearGradient>
-                <filter id="glow">
-                  <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-              </defs>
+            {(() => {
+              if (multiplierPoints.length === 0) return null;
+              const lastPoint = multiplierPoints[multiplierPoints.length - 1];
+              const lastX = lastPoint.x;
+              const lastY = lastPoint.y;
+              const maxXVal = Math.max(6, lastX);
+              const maxYVal = Math.max(0.5, lastY - 1);
               
-              {multiplierPoints.length > 1 && (
-                <>
-                  {/* The filled area below the curve */}
-                  <motion.path
-                    d={`M 0 100 L ${multiplierPoints.map((p) => {
-                      const xBase = (p.x / Math.max(6, multiplierPoints[multiplierPoints.length-1].x)) * 100;
-                      const yBase = 100 - ((p.y - 1) / Math.max(3, multiplierPoints[multiplierPoints.length-1].y - 1)) * 100;
-                      return `${xBase} ${yBase}`;
-                    }).join(' L ')} L ${ (multiplierPoints[multiplierPoints.length-1].x / Math.max(6, multiplierPoints[multiplierPoints.length-1].x)) * 100 } 100 Z`}
-                    fill="url(#chartGradient)"
-                    stroke="none"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: isCrashed ? 0.3 : 1 }}
-                  />
-                  
-                  {/* The main golden/red line */}
-                  <motion.path
-                    d={`M 0 100 L ${multiplierPoints.map((p) => {
-                      const xBase = (p.x / Math.max(6, multiplierPoints[multiplierPoints.length-1].x)) * 100;
-                      const yBase = 100 - ((p.y - 1) / Math.max(3, multiplierPoints[multiplierPoints.length-1].y - 1)) * 100;
-                      return `${xBase} ${yBase}`;
-                    }).join(' L ')}`}
-                    fill="none"
-                    stroke={isCrashed ? "#EF4444" : "#FFD700"}
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                    filter="url(#glow)"
-                  />
-                </>
-              )}
-            </svg>
-            
-            {/* The Bike Icon following the path */}
-            {multiplierPoints.length > 0 && isPlaying && !isCrashed && (
-              <motion.div 
-                style={{
-                  position: 'absolute',
-                  left: `${(multiplierPoints[multiplierPoints.length-1].x / Math.max(6, multiplierPoints[multiplierPoints.length-1].x)) * 100}%`,
-                  top: `${100 - ((multiplierPoints[multiplierPoints.length-1].y - 1) / Math.max(3, multiplierPoints[multiplierPoints.length-1].y - 1)) * 100}%`,
-                  transform: 'translate(-50%, -50%)',
-                  zIndex: 20
-                }}
-                className="transition-all duration-75 ease-linear"
-              >
-                <div className="relative">
-                   {/* Bike Tilt Effect based on growth speed */}
-                   <motion.div
-                    animate={{ 
-                        rotate: [-5, -15, -5],
-                        y: [0, -4, 0]
-                    }}
-                    transition={{ 
-                        duration: 0.2, 
-                        repeat: Infinity,
-                        ease: "easeInOut"
-                    }}
-                   >
-                    <Bike className="w-12 h-12 text-[#FFD700] drop-shadow-[0_0_20px_rgba(255,215,0,0.8)]" />
-                   </motion.div>
- 
-                   {/* Exhaust Flames/Smoke */}
-                   <div className="absolute -left-4 top-1/2 -translate-y-1/2 flex gap-1">
-                      {[...Array(3)].map((_, i) => (
-                          <motion.div 
-                            key={i}
-                            animate={{ 
-                                x: [-10, -40], 
-                                opacity: [1, 0],
-                                scale: [0.5, 1.5]
-                            }}
-                            transition={{ 
-                                duration: 0.3, 
-                                repeat: Infinity, 
-                                delay: i * 0.1 
-                            }}
-                            className="w-2 h-2 bg-orange-500 rounded-full blur-[2px]"
+              const xBaseLast = (lastX / maxXVal) * 82;
+              const yBaseLast = 95 - ((lastY - 1) / maxYVal) * 75;
+              
+              return (
+                <div className="w-full h-full relative">
+                  <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="chartGradient" x1="0" y1="1" x2="0" y2="0">
+                        <stop offset="0%" stopColor={isCrashed ? "#EF4444" : "#FFD700"} stopOpacity="0" />
+                        <stop offset="100%" stopColor={isCrashed ? "#EF4444" : "#FFD700"} stopOpacity="0.4" />
+                      </linearGradient>
+                      <filter id="glow">
+                        <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+                        <feMerge>
+                          <feMergeNode in="coloredBlur"/>
+                          <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                      </filter>
+                    </defs>
+                    
+                    {/* Grid lines and axes */}
+                    <line x1="0" y1="95" x2="95" y2="95" stroke="#222" strokeWidth="0.5" />
+                    <line x1="0" y1="20" x2="0" y2="95" stroke="#222" strokeWidth="0.5" />
+                    
+                    {/* Dynamic horizontal grid lines */}
+                    {[0.25, 0.5, 0.75].map((ratio, index) => {
+                      const yPos = 95 - ratio * 75;
+                      const val = 1 + (maxYVal * ratio);
+                      return (
+                        <g key={index} className="opacity-40">
+                          <line 
+                             x1="0" 
+                             y1={yPos} 
+                             x2="95" 
+                             y2={yPos} 
+                             stroke="#444" 
+                             strokeDasharray="2,3" 
+                             strokeWidth="0.3" 
                           />
-                      ))}
-                   </div>
+                          <text 
+                             x="96" 
+                             y={yPos + 1} 
+                             fill="#FFD700" 
+                             fontSize="2.5" 
+                             fontWeight="bold"
+                             className="font-mono text-[2.5px] fill-zinc-500"
+                          >
+                            {val.toFixed(2)}x
+                          </text>
+                        </g>
+                      );
+                    })}
+                    
+                    {multiplierPoints.length > 1 && (
+                      <>
+                        {/* The filled area below the curve */}
+                        <motion.path
+                          d={`M 0 95 L ${multiplierPoints.map((p) => {
+                            const xBase = (p.x / maxXVal) * 82;
+                            const yBase = 95 - ((p.y - 1) / maxYVal) * 75;
+                            return `${xBase} ${yBase}`;
+                          }).join(' L ')} L ${ xBaseLast } 95 Z`}
+                          fill="url(#chartGradient)"
+                          stroke="none"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: isCrashed ? 0.3 : 1 }}
+                        />
+                        
+                        {/* The main golden/red line */}
+                        <motion.path
+                          d={`M 0 95 L ${multiplierPoints.map((p) => {
+                            const xBase = (p.x / maxXVal) * 82;
+                            const yBase = 95 - ((p.y - 1) / maxYVal) * 75;
+                            return `${xBase} ${yBase}`;
+                          }).join(' L ')}`}
+                          fill="none"
+                          stroke={isCrashed ? "#EF4444" : "#FFD700"}
+                          strokeWidth="3.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          vectorEffect="non-scaling-stroke"
+                          filter="url(#glow)"
+                        />
+                      </>
+                    )}
+                  </svg>
+                  
+                  {/* The Bike Icon following the path */}
+                  {isPlaying && !isCrashed && (
+                    <motion.div 
+                      style={{
+                        position: 'absolute',
+                        left: `${xBaseLast}%`,
+                        top: `${yBaseLast}%`,
+                        transform: 'translate(-50%, -50%)',
+                        zIndex: 20
+                      }}
+                      className="transition-all duration-75 ease-linear"
+                    >
+                      <div className="relative">
+                         {/* Floating Multiplier Badge */}
+                         <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gradient-to-r from-yellow-500 to-amber-500 text-black px-2.5 py-1 rounded-lg font-black text-xs shadow-[0_4px_12px_rgba(251,191,36,0.5)] border border-yellow-300 pointer-events-none whitespace-nowrap animate-pulse flex items-center gap-1">
+                           <span>🏍️</span>
+                           <span>{lastY.toFixed(2)}x</span>
+                         </div>
+                      
+                         {/* Bike Tilt Effect based on growth speed */}
+                         <motion.div
+                          animate={{ 
+                              rotate: [-5, -15, -5],
+                              y: [0, -4, 0]
+                          }}
+                          transition={{ 
+                              duration: 0.2, 
+                              repeat: Infinity,
+                              ease: "easeInOut"
+                          }}
+                         >
+                          <Bike className="w-12 h-12 text-[#FFD700] drop-shadow-[0_0_20px_rgba(255,215,0,0.8)]" />
+                         </motion.div>
+        
+                         {/* Exhaust Flames/Smoke */}
+                         <div className="absolute -left-4 top-1/2 -translate-y-1/2 flex gap-1">
+                            {[...Array(3)].map((_, i) => (
+                                <motion.div 
+                                  key={i}
+                                  animate={{ 
+                                      x: [-10, -40], 
+                                      opacity: [1, 0],
+                                      scale: [0.5, 1.5]
+                                  }}
+                                  transition={{ 
+                                      duration: 0.3, 
+                                      repeat: Infinity, 
+                                      delay: i * 0.1 
+                                  }}
+                                  className="w-2 h-2 bg-orange-500 rounded-full blur-[2px]"
+                                />
+                            ))}
+                         </div>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
-              </motion.div>
-            )}
+              );
+            })()}
           </div>
  
           <motion.div 
