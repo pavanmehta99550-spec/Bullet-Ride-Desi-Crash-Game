@@ -112,6 +112,21 @@ export async function updateUserBalance(userId: string, newBalance: number, acti
   }
 }
 
+export async function saveGlobalHistory(roundId: string, multiplier: number) {
+  const historyRef = doc(db, 'globalHistory', roundId);
+  try {
+    await setDoc(historyRef, {
+      id: roundId,
+      multiplier,
+      createdAt: Date.now(),
+      timestamp: serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    // Silently fail or log for debugging - multiple clients might try to save the same round
+    console.warn("Global history save skipped or failed:", error);
+  }
+}
+
 export async function saveGameHistory(userId: string, result: {
   betAmount: number;
   multiplier: number;

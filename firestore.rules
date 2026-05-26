@@ -76,6 +76,14 @@ service cloud.firestore {
         && (incoming().get('updatedAt', null) == request.time || !incoming().keys().hasAny(['updatedAt']));
     }
 
+    match /globalHistory/{resultId} {
+      allow read: if true;
+      allow create: if incoming().keys().hasAll(['id', 'multiplier', 'createdAt'])
+        && incoming().id is string
+        && incoming().multiplier is number;
+      allow update, delete: if false;
+    }
+
     match /users/{userId}/history/{gameId} {
       allow list: if isOwner(userId);
       allow get: if isOwner(userId);

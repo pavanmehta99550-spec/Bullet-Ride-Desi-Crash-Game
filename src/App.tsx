@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
-  updateUserBalance, saveGameHistory 
+  updateUserBalance, saveGameHistory, saveGlobalHistory 
 } from './lib/firebase';
 import { 
   onAuthStateChanged, signInWithPopup, signOut,
@@ -72,7 +72,8 @@ export default function App() {
   const [multiplierPoints, setMultiplierPoints] = useState<{ x: number, y: number }[]>([]);
   const animationRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
-  const nextRoundData = useRef<{ crashPoint: number; crashReason: string } | null>(null);
+  const nextRoundData = useRef<{ roundId: string; crashPoint: number; crashReason: string } | null>(null);
+  const currentRoundId = useRef<string | null>(null);
 
   // Sync refs to avoid stale closures in core intervals
   const isAutoPlayRef = useRef(isAutoPlay);
@@ -210,22 +211,19 @@ export default function App() {
     return () => unsub();
   }, [user?.uid]);
 
-  // Real-time History Sync from Firestore
+  // Real-time GLOBAL History Sync
   useEffect(() => {
-    if (!user) return;
     const q = query(
-      collection(db, 'users', user.uid, 'history'),
+      collection(db, 'globalHistory'),
       orderBy('createdAt', 'desc'),
-      limit(30)
+      limit(20)
     );
     setIsHistoryLoading(true);
     const unsub = onSnapshot(q, (snapshot) => {
-      console.log("History snapshot received:", snapshot.size, "docs");
       const historyData = snapshot.docs.map(doc => {
         const data = doc.data();
         let timeStr = 'Just now';
         
-        // Priority to data.createdAt (local number), then server timestamp
         let dateObj: Date;
         if (data.createdAt) {
           dateObj = new Date(data.createdAt);
@@ -243,8 +241,7 @@ export default function App() {
             hour12: true 
           });
         } catch (e) {
-          dateObj = new Date();
-          timeStr = dateObj.toLocaleTimeString();
+          timeStr = new Date().toLocaleTimeString();
         }
 
         return {
@@ -253,15 +250,11 @@ export default function App() {
           time: timeStr
         };
       });
-      console.log("New history data:", historyData);
       setHistory(historyData as any);
       setIsHistoryLoading(false);
     });
-    return () => {
-      unsub();
-      setIsHistoryLoading(true);
-    };
-  }, [user?.uid]);
+    return () => unsub();
+  }, []);
 
   const startRound = async (isAutoStart = false) => {
     // If running manually and user is not logged in, show Auth modal
@@ -306,8 +299,8 @@ export default function App() {
 
     // Use pre-fetched data or fetch fresh
     if (nextRoundData.current) {
-      const { crashPoint, crashReason, isOverride } = nextRoundData.current;
-      console.log(`[GAME] Starting round with ${isOverride ? 'OVERRIDE' : 'RANDOM'} crash point: ${crashPoint}x`);
+      const { roundId, crashPoint, crashReason, isOverride } = nextRoundData.current;
+      console.log(`[GAME] Starting round with ${isOverride ? 'OVERRIDE' : 'RANDOM'} crash point: ${crashPoint}x (Round ID: ${roundId})`);
       
       // If it was an override, notify server to consume it so it doesn't repeat
       if (isOverride) {
@@ -315,6 +308,7 @@ export default function App() {
       }
 
       // Update refs directly to avoid state race condition
+      currentRoundId.current = roundId;
       crashPointRef.current = crashPoint;
       setCrashPoint(crashPoint);
       setCrashReason(crashReason);
@@ -328,6 +322,7 @@ export default function App() {
         const data = await safeFetchJson('/api/round/start', { method: 'POST' });
         
         // Update refs directly
+        currentRoundId.current = data.roundId;
         crashPointRef.current = data.crashPoint;
         setCrashPoint(data.crashPoint);
         setCrashReason(data.crashReason);
@@ -433,6 +428,11 @@ export default function App() {
       setIsCrashed(true);
       setIsPlaying(false);
       
+      // Save to Global History for real-time updates
+      if (currentRoundId.current) {
+        saveGlobalHistory(currentRoundId.current, finalMultiplier);
+      }
+
       // Save Loss to History using fresh ref values
       const currentUser = userRef.current;
       if (currentUser && hasActiveBetRef.current && !hasCashedOutRef.current) {
@@ -1040,7 +1040,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen h-[100dvh] w-full bg-[#0F0F0F] text-[#F5F5F5] font-sans border-zinc-800 relative overflow-hidden overscroll-none touch-none">
+    <div className="fixed inset-0 flex flex-col w-full bg-[#0F0F0F] text-[#F5F5F5] font-sans border-zinc-800 overflow-hidden overscroll-none select-none">
       {/* Auth Modal */}
       <AuthModal 
         isOpen={showAuthModal} 
