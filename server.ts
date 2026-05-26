@@ -656,6 +656,7 @@ async function startServer() {
   });
 
   app.post("/api/admin/set-crash", (req, res) => {
+    console.log("[ADMIN] Received set-crash body:", req.body);
     const { crashPoint, crashReason } = req.body;
     if (crashPoint !== undefined && crashPoint !== null && crashPoint !== "") {
       const parsed = parseFloat(crashPoint);
@@ -713,7 +714,9 @@ async function startServer() {
   }
 
   app.post("/api/round/get-data", (req, res) => {
-    res.json(generateRoundData(false));
+    const data = generateRoundData(false);
+    console.log("[ROUND] get-data response:", data);
+    res.json(data);
   });
 
   // The requested backend endpoint

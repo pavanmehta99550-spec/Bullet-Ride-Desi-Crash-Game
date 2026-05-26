@@ -1001,23 +1001,23 @@ export default function App() {
           crashReason: adminCrashReason.trim() 
         })
       });
-      setAdminStatus({ message: data.message, type: 'success' });
-      setTimeout(() => setAdminStatus(null), 4000);
+      console.log("Admin override success:", data);
+      showAdminStatus(data.message || "Physics Modified! ✅");
       prefetchNextRound(); // Force update next round data with this override
     } catch (err: any) {
-      setAdminStatus({ message: "System Error: Physics apply nahi hui!", type: 'error' });
-      console.error("Error setting override:", err.message || err);
+      const errMsg = err.message || "Physics apply nahi hui!";
+      showAdminStatus(`Error: ${errMsg}`, 'error');
+      console.error("Error setting override:", err);
     }
   };
 
   const clearAdminOverride = async () => {
     try {
       const data = await safeFetchJson('/api/admin/consume-override', { method: 'POST' });
-      setAdminStatus({ message: "Physics Restored to Normal! ✅", type: 'success' });
-      setTimeout(() => setAdminStatus(null), 3000);
+      showAdminStatus("Physics Restored to Normal! ✅");
       prefetchNextRound();
     } catch (err: any) {
-      setAdminStatus({ message: "Clear fail ho gaya!", type: 'error' });
+      showAdminStatus("Clear fail ho gaya!", 'error');
     }
   };
 
