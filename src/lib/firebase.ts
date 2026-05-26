@@ -2,12 +2,10 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { 
   getFirestore, 
-  initializeFirestore, 
-  persistentLocalCache, 
-  persistentMultipleTabManager,
   doc, 
   setDoc, 
   getDoc, 
+  updateDoc,
   serverTimestamp 
 } from 'firebase/firestore';
 
@@ -21,29 +19,16 @@ const firebaseConfig = {
   firestoreDatabaseId: "ai-studio-d9c66130-58ba-4b73-97e5-8abb490c2227"
 };
 
+// Standard clean Firestore initialization. Re-use dbId correctly.
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
+const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)' 
+  ? firebaseConfig.firestoreDatabaseId 
+  : undefined;
 
-let dbInstance: any;
+export const db = getFirestore(app, dbId);
 
-try {
-  // Safe initialization of Firestore with robust Persistent Cache
-  // Tab manager and persistent cached data provide seamless offline playback!
-  // If we are in sandboxed iframes where indexedDB is locked, fallback immediately.
-  dbInstance = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  }, dbId === '(default)' ? undefined : dbId);
-} catch (e) {
-  console.warn("Firestore persistent local cache initialization failed (expected in sandboxed iframe), falling back to getFirestore:", e);
-  dbInstance = getFirestore(app, dbId === '(default)' ? undefined : dbId);
-}
-
-export const db = dbInstance;
-
-// Ensure persistence is set to LOCAL
+// Ensure local persistence for sign-ins
 setPersistence(auth, browserLocalPersistence);
 
 export const googleProvider = new GoogleAuthProvider();
@@ -57,49 +42,13 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-  }
-}
-
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errMessage = error instanceof Error ? error.message : String(error);
-  
-  const errInfo: FirestoreErrorInfo = {
-    error: errMessage,
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-    },
-    operationType,
-    path
-  };
-
-  console.warn('Firestore Non-Fatal Error handled gracefully:', JSON.stringify(errInfo));
-  
-  // If reference of error is related to offline connection/timeout, we do not throw. We swallow and let code use local fallbacks.
-  const isOffline = errMessage.toLowerCase().includes('offline') || 
-                    errMessage.toLowerCase().includes('failed to get document') ||
-                    errMessage.toLowerCase().includes('network-connector') ||
-                    errMessage.toLowerCase().includes('unavailable');
-                    
-  if (isOffline) {
-    return; // Silent handler for offline states to prevent crashing
-  }
-  
-  throw new Error(JSON.stringify(errInfo));
+  console.warn(`[FIREBASE GRACEFUL] ${operationType} failed on ${path || 'unknown'}:`, errMessage);
+  // We NEVER throw errors here so that offline gameplay or network ripples never crash bet placements or cashouts.
 }
 
-// User Profile Fallback Local Cache keys
+// Local cache keys
 const profileCacheKey = (uid: string) => `cached_profile_v1_${uid}`;
 
 export async function syncUserProfile(user: any) {
@@ -109,19 +58,21 @@ export async function syncUserProfile(user: any) {
   try {
     const userDoc = await getDoc(userRef);
     if (!userDoc.exists()) {
-      // New user
+      // New user registration
       const userData = {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName || 'Player',
-        walletBalance: 0, // Default starting balance is zero as requested
+        walletBalance: 0, 
+        coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 },
+        activeCoin: 'INR',
         createdAt: Date.now(),
       };
       
       try {
         await setDoc(userRef, userData, { merge: true });
       } catch (writeErr) {
-        console.warn("Could not save initial user profile online:", writeErr);
+        handleFirestoreError(writeErr, OperationType.CREATE, `users/${user.uid}`);
       }
       
       localStorage.setItem(localKey, JSON.stringify(userData));
@@ -132,9 +83,9 @@ export async function syncUserProfile(user: any) {
       return data;
     }
   } catch (error) {
-    console.warn("Firestore syncUserProfile error, loading local localStorage cache...", error);
+    handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
     
-    // Check local storage fallback first
+    // Offline / Failed to load profile fallback from local cache
     const cached = localStorage.getItem(localKey);
     if (cached) {
       try {
@@ -142,13 +93,14 @@ export async function syncUserProfile(user: any) {
       } catch (_) {}
     }
     
-    // Total offline mock data if empty
+    // Clean safe default initial schema for sandboxed environments
     return {
       uid: user.uid,
       email: user.email,
       displayName: user.displayName || 'Player',
-      walletBalance: 50000, // Safe default starting balance for fun
-      coinBalances: { INR: 50000, BTC: 1, ETH: 10, USDT: 1000, SOL: 100, DOGE: 50000 },
+      walletBalance: 50000,
+      coinBalances: { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500 },
+      activeCoin: 'INR',
       createdAt: Date.now(),
     };
   }
@@ -158,7 +110,7 @@ export async function updateUserBalance(userId: string, newBalance: number, acti
   const userRef = doc(db, 'users', userId);
   const localKey = profileCacheKey(userId);
   
-  // Always update locally first for absolute instant latency & 100% offline accuracy
+  // 1. Instant full sync to LocalStorage
   let coinBalances: Record<string, number> = { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 };
   let cachedData: any = { uid: userId };
   
@@ -183,20 +135,38 @@ export async function updateUserBalance(userId: string, newBalance: number, acti
   
   localStorage.setItem(localKey, JSON.stringify(cachedData));
 
+  // 2. Perform safe incremental online update to Firestore using Dot Notation
+  // This updates ONLY the active transaction coin balance without risking wiping other fields!
   try {
     const updateData: any = {
-      coinBalances,
       activeCoin,
       updatedAt: serverTimestamp()
     };
+    
+    updateData[`coinBalances.${activeCoin}`] = parseFloat(newBalance.toFixed(8));
     
     if (activeCoin === 'INR') {
       updateData.walletBalance = newBalance;
     }
 
-    await setDoc(userRef, updateData, { merge: true });
+    await updateDoc(userRef, updateData);
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+    // If updateDoc fails (e.g. document does not exist yet), do a robust setDoc merger
+    try {
+      const setData: any = {
+        activeCoin,
+        updatedAt: serverTimestamp()
+      };
+      setData.coinBalances = {
+        [activeCoin]: parseFloat(newBalance.toFixed(8))
+      };
+      if (activeCoin === 'INR') {
+        setData.walletBalance = newBalance;
+      }
+      await setDoc(userRef, setData, { merge: true });
+    } catch (setErr) {
+      handleFirestoreError(setErr, OperationType.UPDATE, `users/${userId}`);
+    }
   }
 }
 
@@ -210,7 +180,7 @@ export async function saveGlobalHistory(roundId: string, multiplier: number) {
       timestamp: serverTimestamp()
     }, { merge: true });
   } catch (error) {
-    console.warn("Global history save skipped or offline:", error);
+    handleFirestoreError(error, OperationType.CREATE, `globalHistory/${roundId}`);
   }
 }
 
@@ -223,7 +193,7 @@ export async function saveGameHistory(userId: string, result: {
   const gameId = Date.now().toString();
   const historyRef = doc(db, 'users', userId, 'history', gameId);
   
-  // Local history log for instant display when offline
+  // Save locally first for high reactivity
   const historyKey = `game_history_list_${userId}`;
   try {
     const existing = localStorage.getItem(historyKey);
