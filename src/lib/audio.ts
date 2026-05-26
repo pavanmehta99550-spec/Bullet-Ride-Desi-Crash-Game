@@ -5,6 +5,7 @@ class BikeEngine {
   private ctx: AudioContext | null = null;
   private osc1: OscillatorNode | null = null;
   private osc2: OscillatorNode | null = null;
+  private harmonicOsc: OscillatorNode | null = null;
   private lfo: OscillatorNode | null = null;
   private filter: BiquadFilterNode | null = null;
   private masterGain: GainNode | null = null;
@@ -23,35 +24,42 @@ class BikeEngine {
       // 1. Master gain for ramping
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.setValueAtTime(0, this.ctx.currentTime);
-      this.masterGain.gain.linearRampToValueAtTime(0.12, this.ctx.currentTime + 0.15); // subtle ambient volume
+      // Boost subtle ambient volume to 0.18 for better audibility
+      this.masterGain.gain.linearRampToValueAtTime(0.18, this.ctx.currentTime + 0.1);
 
       // 2. Pulse modulation (LFO) for individual exhaust strokes
       this.lfo = this.ctx.createOscillator();
       this.lfo.type = 'sawtooth';
-      this.lfo.frequency.setValueAtTime(8, this.ctx.currentTime); // 8Hz cylinder idle speed
+      this.lfo.frequency.setValueAtTime(12, this.ctx.currentTime); // Cylinder idle speed 12Hz
 
       const lfoGain = this.ctx.createGain();
       lfoGain.gain.setValueAtTime(0.4, this.ctx.currentTime); // depth of throb
 
       // 3. Engine cylinders (oscillators)
+      // Raised default base frequency to 80Hz so it is easily audible on laptop & mobile phone speakers
       this.osc1 = this.ctx.createOscillator();
       this.osc1.type = 'sawtooth';
-      this.osc1.frequency.setValueAtTime(40, this.ctx.currentTime); // Deep rumbling low base frequency
+      this.osc1.frequency.setValueAtTime(80, this.ctx.currentTime);
 
       this.osc2 = this.ctx.createOscillator();
-      this.osc2.type = 'triangle'; // triangle adds low-mid fatness without harsh treble
-      this.osc2.frequency.setValueAtTime(40.4, this.ctx.currentTime); // Slightly detuned
+      this.osc2.type = 'sawtooth';
+      this.osc2.frequency.setValueAtTime(80.8, this.ctx.currentTime); // Detuned growl
 
-      // 4. Lowpass / Bandpass filter mix for throaty growl
+      // Harmonic high-rev exhaust scream (sine/triangle)
+      this.harmonicOsc = this.ctx.createOscillator();
+      this.harmonicOsc.type = 'triangle';
+      this.harmonicOsc.frequency.setValueAtTime(160.5, this.ctx.currentTime);
+
+      // 4. Lowpass filter with throat growl resonance
       this.filter = this.ctx.createBiquadFilter();
       this.filter.type = 'lowpass';
-      this.filter.Q.setValueAtTime(5, this.ctx.currentTime);
-      this.filter.frequency.setValueAtTime(150, this.ctx.currentTime);
+      this.filter.Q.setValueAtTime(6, this.ctx.currentTime);
+      this.filter.frequency.setValueAtTime(320, this.ctx.currentTime);
 
       // Connections:
       // Modulate the amp pulse
       this.pulseGain = this.ctx.createGain();
-      this.pulseGain.gain.setValueAtTime(0.6, this.ctx.currentTime);
+      this.pulseGain.gain.setValueAtTime(0.5, this.ctx.currentTime);
       
       this.lfo.connect(lfoGain);
       lfoGain.connect(this.pulseGain.gain);
@@ -59,6 +67,7 @@ class BikeEngine {
       // Route oscillators through pulse amp
       this.osc1.connect(this.pulseGain);
       this.osc2.connect(this.pulseGain);
+      this.harmonicOsc.connect(this.pulseGain);
 
       this.pulseGain.connect(this.filter);
       this.filter.connect(this.masterGain);
@@ -68,6 +77,7 @@ class BikeEngine {
       this.lfo.start();
       this.osc1.start();
       this.osc2.start();
+      this.harmonicOsc.start();
     } catch (e) {
       console.error('Failed to start bike engine synthesizer:', e);
     }
@@ -82,16 +92,19 @@ class BikeEngine {
     // Standard growth multiplier goes from 1.0x to 100.0x or more
     const factor = Math.min(6.0, Math.max(1.0, multiplier));
     
-    // Rev the engine based on throttle multiplier factor!
-    const baseFreq = Math.min(180, 40 + (factor - 1.0) * 25);
-    const filterFreq = Math.min(900, 150 + (factor - 1.0) * 150);
-    const strokeSpeed = Math.min(30, 8 + (factor - 1.0) * 4); // RPM sound increases
+    // Rev the engine and shift pitches up beautifully for throttle sound effect
+    const baseFreq = Math.min(280, 80 + (factor - 1.0) * 35);
+    const filterFreq = Math.min(1300, 320 + (factor - 1.0) * 180);
+    const strokeSpeed = Math.min(42, 12 + (factor - 1.0) * 5); // Exhaust strokes accelerate
 
     if (this.osc1) {
       this.osc1.frequency.setTargetAtTime(baseFreq, time, 0.08);
     }
     if (this.osc2) {
       this.osc2.frequency.setTargetAtTime(baseFreq * 1.015, time, 0.08);
+    }
+    if (this.harmonicOsc) {
+      this.harmonicOsc.frequency.setTargetAtTime(baseFreq * 2.02, time, 0.08);
     }
     if (this.filter) {
       this.filter.frequency.setTargetAtTime(filterFreq, time, 0.08);
@@ -108,6 +121,7 @@ class BikeEngine {
     const endCtx = this.ctx;
     const endOsc1 = this.osc1;
     const endOsc2 = this.osc2;
+    const endHarmonic = this.harmonicOsc;
     const endLfo = this.lfo;
     const endMaster = this.masterGain;
 
@@ -116,13 +130,14 @@ class BikeEngine {
     try {
       const time = endCtx.currentTime;
       endMaster.gain.setValueAtTime(endMaster.gain.value, time);
-      // Fast fade out down to 0 to prevent audio popping
+      // Fast fade out down to 0 to prevent audio popping or clicks
       endMaster.gain.exponentialRampToValueAtTime(0.0001, time + 0.12);
 
       setTimeout(() => {
         try {
           if (endOsc1) endOsc1.stop();
           if (endOsc2) endOsc2.stop();
+          if (endHarmonic) endHarmonic.stop();
           if (endLfo) endLfo.stop();
         } catch (err) {
           // already stopped
@@ -134,6 +149,7 @@ class BikeEngine {
 
     this.osc1 = null;
     this.osc2 = null;
+    this.harmonicOsc = null;
     this.lfo = null;
     this.filter = null;
     this.masterGain = null;
@@ -141,13 +157,13 @@ class BikeEngine {
   }
 }
 
-// Low-pass filtered white noise burst + low sub drop sweep
+// Lowpass/Bandpass filtered white noise burst + sweet explosion drop
 function playCrashSound(ctx: AudioContext) {
   try {
     const time = ctx.currentTime;
     
-    // Create random Noise buffer for dust/crunch
-    const bufferSize = ctx.sampleRate * 0.7; // 0.7 second duration
+    // Create random Noise buffer for crash crunch
+    const bufferSize = ctx.sampleRate * 0.8; // 0.8 second duration
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -159,23 +175,23 @@ function playCrashSound(ctx: AudioContext) {
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(350, time);
-    filter.frequency.exponentialRampToValueAtTime(30, time + 0.65);
-    filter.Q.setValueAtTime(2.5, time);
+    filter.frequency.setValueAtTime(360, time);
+    filter.frequency.exponentialRampToValueAtTime(45, time + 0.7);
+    filter.Q.setValueAtTime(2.0, time);
 
     const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.35, time);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.68);
+    noiseGain.gain.setValueAtTime(0.45, time); // elevated loudness
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.75);
 
-    // Deep heavy impact sweep
+    // Deep heavy impact sweep (raised pitch slightly for clarity on small speakers)
     const lowOsc = ctx.createOscillator();
-    lowOsc.type = 'triangle';
-    lowOsc.frequency.setValueAtTime(120, time);
-    lowOsc.frequency.exponentialRampToValueAtTime(10, time + 0.4);
+    lowOsc.type = 'sawtooth';
+    lowOsc.frequency.setValueAtTime(140, time);
+    lowOsc.frequency.exponentialRampToValueAtTime(40, time + 0.5);
 
     const oscGain = ctx.createGain();
-    oscGain.gain.setValueAtTime(0.5, time);
-    oscGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.45);
+    oscGain.gain.setValueAtTime(0.6, time);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.55);
 
     // Connections
     noise.connect(filter);
@@ -189,8 +205,8 @@ function playCrashSound(ctx: AudioContext) {
     noise.start(time);
     lowOsc.start(time);
 
-    noise.stop(time + 0.7);
-    lowOsc.stop(time + 0.7);
+    noise.stop(time + 0.82);
+    lowOsc.stop(time + 0.82);
   } catch (err) {
     console.error('Failed to synthesize crash sound:', err);
   }
@@ -201,8 +217,8 @@ function playCheerSound(ctx: AudioContext) {
   try {
     const time = ctx.currentTime;
 
-    // Cheer applause synthesis using sweeping high-resonance envelope
-    const bufferSize = ctx.sampleRate * 0.95;
+    // Cheer applause synthesis using sweeping high-resonance filter
+    const bufferSize = ctx.sampleRate * 1.0;
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const channelData = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -214,42 +230,41 @@ function playCheerSound(ctx: AudioContext) {
 
     const bandpass = ctx.createBiquadFilter();
     bandpass.type = 'bandpass';
-    bandpass.Q.setValueAtTime(5.5, time);
-    // Swell frequency to represent collective excitement
-    bandpass.frequency.setValueAtTime(450, time);
-    bandpass.frequency.linearRampToValueAtTime(1100, time + 0.25);
-    bandpass.frequency.exponentialRampToValueAtTime(350, time + 0.9);
+    bandpass.Q.setValueAtTime(5.0, time);
+    bandpass.frequency.setValueAtTime(500, time);
+    bandpass.frequency.linearRampToValueAtTime(1200, time + 0.2);
+    bandpass.frequency.exponentialRampToValueAtTime(400, time + 0.9);
 
     const crowdGain = ctx.createGain();
     crowdGain.gain.setValueAtTime(0, time);
-    crowdGain.gain.linearRampToValueAtTime(0.08, time + 0.18);
-    crowdGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.95);
+    crowdGain.gain.linearRampToValueAtTime(0.12, time + 0.15); // Clear cheer applause volume
+    crowdGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.98);
 
     crowd.connect(bandpass);
     bandpass.connect(crowdGain);
     crowdGain.connect(ctx.destination);
     crowd.start(time);
-    crowd.stop(time + 0.95);
+    crowd.stop(time + 1.0);
 
     // Upward clean arpeggio on cashout (E Major key for beautiful triumph)
     const notes = [329.63, 415.30, 493.88, 659.25, 830.61, 987.77, 1318.51];
 
     notes.forEach((freq, index) => {
       const osc = ctx.createOscillator();
-      osc.type = 'sine'; // clean chimes
+      osc.type = 'sine'; // clean retro chimes
       osc.frequency.setValueAtTime(freq, time + index * 0.05);
 
-      const gainVal = 0.08 - (index * 0.005); // slightly softer as pitch increases
+      const gainVal = 0.12 - (index * 0.006); // sweet volume taper
       const gainNode = ctx.createGain();
       gainNode.gain.setValueAtTime(0, time);
       gainNode.gain.linearRampToValueAtTime(gainVal, time + index * 0.05 + 0.01);
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, time + index * 0.05 + 0.28);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, time + index * 0.05 + 0.32);
 
       osc.connect(gainNode);
       gainNode.connect(ctx.destination);
 
       osc.start(time + index * 0.05);
-      osc.stop(time + index * 0.05 + 0.35);
+      osc.stop(time + index * 0.05 + 0.4);
     });
   } catch (err) {
     console.error('Failed to synthesize cheer sound:', err);
@@ -265,6 +280,43 @@ export class GameAudioManager {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('game_sound_muted');
       this.isMuted = stored === 'true';
+
+      // Create standard browser interaction listener to instantly unlock / resume AudioContext
+      const unlock = () => {
+        if (this.isMuted) return;
+
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioCtx) {
+            this.ctx = new AudioCtx();
+            this.bikeEngine = new BikeEngine(this.ctx);
+          }
+        }
+
+        if (this.ctx) {
+          if (this.ctx.state === 'suspended') {
+            this.ctx.resume()
+              .then(() => {
+                if (this.ctx && this.ctx.state === 'running') {
+                  cleanup();
+                }
+              })
+              .catch(err => console.log('AudioContext resume failed:', err));
+          } else if (this.ctx.state === 'running') {
+            cleanup();
+          }
+        }
+      };
+
+      const cleanup = () => {
+        window.removeEventListener('click', unlock, { capture: true });
+        window.removeEventListener('touchstart', unlock, { capture: true });
+        window.removeEventListener('keydown', unlock, { capture: true });
+      };
+
+      window.addEventListener('click', unlock, { capture: true, passive: true });
+      window.addEventListener('touchstart', unlock, { capture: true, passive: true });
+      window.addEventListener('keydown', unlock, { capture: true, passive: true });
     }
   }
 
@@ -292,6 +344,9 @@ export class GameAudioManager {
       }
     } else {
       this.initContext();
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
     }
     return this.isMuted;
   }
