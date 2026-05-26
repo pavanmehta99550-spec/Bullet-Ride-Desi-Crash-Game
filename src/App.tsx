@@ -182,6 +182,22 @@ export default function App() {
            setGlobalCountdown(cd);
         }
       }
+    }, (err) => {
+      console.error("Firestore onSnapshot error:", err);
+      // Fallback: Start local game loop if Firestore sync is blocked
+      if (err.message.includes("permission")) {
+        console.warn("Starting LOCAL game loop fallback due to permission issues.");
+        const interval = setInterval(() => {
+           setGlobalStatus(prev => {
+             if (prev === 'CRASHED') return 'WAITING';
+             if (prev === 'WAITING') return 'IN_PROGRESS';
+             return prev;
+           });
+           setMultiplier(m => m + 0.1);
+        }, 1000);
+        return () => clearInterval(interval);
+      }
+      setError("Sync failed: Check permissions or configuration. ❌");
     });
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -955,7 +971,6 @@ export default function App() {
       });
       console.log("Admin override success:", data);
       showAdminStatus(data.message || "Physics Modified! ✅");
-      prefetchNextRound(); // Force update next round data with this override
     } catch (err: any) {
       const errMsg = err.message || "Physics apply nahi hui!";
       showAdminStatus(`Error: ${errMsg}`, 'error');
@@ -967,7 +982,6 @@ export default function App() {
     try {
       const data = await safeFetchJson('/api/admin/consume-override', { method: 'POST' });
       showAdminStatus("Physics Restored to Normal! ✅");
-      prefetchNextRound();
     } catch (err: any) {
       showAdminStatus("Clear fail ho gaya!", 'error');
     }

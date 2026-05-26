@@ -38,6 +38,14 @@
       "schema": "gameResult",
       "description": "User game history"
     },
+    "/game/{gameId}": {
+      "schema": { "type": "object", "properties": { "status": { "type": "string" }, "roundId": { "type": "string" }, "crashPoint": { "type": "number" } } },
+      "description": "Current active game state"
+    },
+    "/globalHistory/{roundId}": {
+      "schema": { "type": "object", "properties": { "id": { "type": "string" }, "multiplier": { "type": "number" } } },
+      "description": "Public history of all rounds"
+    },
     "/admins/{userId}": {
       "schema": { "type": "object", "properties": { "role": { "type": "string" } } },
       "description": "Admin access control"

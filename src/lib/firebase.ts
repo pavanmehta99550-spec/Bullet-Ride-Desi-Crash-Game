@@ -2,12 +2,13 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 const firebaseConfig = {
-  apiKey: "AIzaSyAAylk4kI5has8jdwX0ef29vcRkLPoSoNw", // Preserving the existing key as the user provided a placeholder
-  authDomain: "clipnova-f259d.firebaseapp.com",
-  projectId: "clipnova-f259d",
-  storageBucket: "clipnova-f259d.firebasestorage.app",
-  messagingSenderId: "1021594403404",
-  appId: "1:1021594403404:web:86fb96b2e2d93e110b42ca"
+  apiKey: "AIzaSyAHocKjNGOjhUPJai7ROdQ8bzquO537tQA",
+  authDomain: "eng-scholar-j07pf.firebaseapp.com",
+  projectId: "eng-scholar-j07pf",
+  storageBucket: "eng-scholar-j07pf.firebasestorage.app",
+  messagingSenderId: "233719692690",
+  appId: "1:233719692690:web:004c072eda8132178fd54b",
+  firestoreDatabaseId: "ai-studio-d9c66130-58ba-4b73-97e5-8abb490c2227"
 };
 
 const app = initializeApp(firebaseConfig);
