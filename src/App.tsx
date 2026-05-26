@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldAlert, RefreshCw, Bike, Gauge, User, History, 
-  ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2, X 
+  ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2, X,
+  Volume2, VolumeX
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
@@ -16,6 +17,7 @@ import {
 import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
+import { audioManager } from './lib/audio';
 
 interface GameHistory {
   id: string | number;
@@ -69,6 +71,12 @@ export default function App() {
   const [globalCountdown, setGlobalCountdown] = useState<number>(0);
   const [isBetQueued, setIsBetQueued] = useState(false);
   const [hasActiveBet, setHasActiveBet] = useState(false);
+  const [isMuted, setIsMuted] = useState(audioManager.getMutedState());
+
+  const toggleSound = () => {
+    const nextState = audioManager.toggleMute();
+    setIsMuted(nextState);
+  };
 
   const [multiplierPoints, setMultiplierPoints] = useState<{ x: number, y: number }[]>([]);
   const animationRef = useRef<number>(0);
@@ -102,24 +110,8 @@ export default function App() {
   useEffect(() => { hasCashedOutRef.current = hasCashedOut; }, [hasCashedOut]);
   useEffect(() => { activeCoinRef.current = activeCoin; }, [activeCoin]);
 
-  // Synchronize multiplier points for graph rendering across both normal and fallback modes
-  useEffect(() => {
-    if (globalStatus === 'IN_PROGRESS') {
-      const now = Date.now();
-      const sTime = startTimeRef.current || (now - (Math.log(multiplier || 1) / 0.06) * 1000);
-      const timeElapsed = Math.max(0, (now - sTime) / 1000);
-      
-      setMultiplierPoints(prev => {
-        const lastPoint = prev[prev.length - 1];
-        if (!lastPoint || (multiplier > lastPoint.y && timeElapsed - lastPoint.x > 0.03)) {
-          return [...prev, { x: timeElapsed, y: multiplier }].slice(-100);
-        }
-        return prev;
-      });
-    } else if (globalStatus === 'WAITING') {
-      setMultiplierPoints([{ x: 0, y: 1.00 }]);
-    }
-  }, [multiplier, globalStatus]);
+  // Note: multiplierPoints are dynamically synced inside updateMultiplier and handleGameUpdate 
+  // to avoid overhead of a useEffect listening to high-frequency state updates.
 
   const fetchCoins = async () => {
     try {
@@ -133,129 +125,182 @@ export default function App() {
   };
 
   useEffect(() => {
+    let isCurrent = true;
+    let intervalId: any = null;
+
     fetchCoins();
-    
+
+    const handleGameUpdate = (data: any) => {
+      if (!isCurrent || !data) return;
+
+      // On Round Change
+      if (data.roundId !== globalRoundIdRef.current) {
+        globalRoundIdRef.current = data.roundId;
+        setHasCashedOut(false);
+        setCashedOutMultiplier(null);
+        setMultiplierPoints([{ x: 0, y: 1.00 }]);
+        
+        // Place Queued Bet
+        if (isBetQueuedRef.current && userRef.current) {
+           const b = betAmountRef.current;
+           if (balanceRef.current >= b) {
+              setHasActiveBet(true);
+              updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
+              setWithdrawableBalance(prev => Math.max(0, prev - b));
+              setIsBetQueued(false);
+           }
+        } else if (isAutoPlayRef.current && userRef.current) {
+           const b = betAmountRef.current;
+           if (balanceRef.current >= b) {
+              setHasActiveBet(true);
+              updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
+              setWithdrawableBalance(prev => Math.max(0, prev - b));
+           }
+        }
+      }
+
+      setGlobalStatus(data.status);
+      setCrashPoint(data.crashPoint);
+      setCrashReason(data.crashReason || "");
+      crashPointRef.current = data.crashPoint;
+
+      if (data.status === 'IN_PROGRESS') {
+         setIsPlaying(true);
+         setIsCrashed(false);
+         // Canonical sync: use the server's intentional start time
+         startTimeRef.current = data.startTime;
+
+         // Dynamic Engine Sound Start
+         audioManager.playRide(1.00);
+      } else if (data.status === 'CRASHED') {
+         setIsCrashed(true);
+         setIsPlaying(false);
+         setMultiplier(data.crashPoint);
+         
+         // Play procedural crash audio
+         audioManager.playCrash();
+         
+         const crashX = data.startTime ? Math.max(0, (Date.now() - data.startTime) / 1000) : 0;
+         setMultiplierPoints(prev => {
+           const lastPoint = prev[prev.length - 1];
+           if (!lastPoint || data.crashPoint > lastPoint.y) {
+             return [...prev, { x: crashX, y: data.crashPoint }].slice(-100);
+           }
+           return prev;
+         });
+
+         // Settle Loss
+         if (hasActiveBetRef.current && !hasCashedOutRef.current && userRef.current) {
+            saveGameHistory(userRef.current.uid, {
+               betAmount: betAmountRef.current,
+               multiplier: data.crashPoint,
+               winAmount: 0,
+               status: 'loss'
+            });
+            setHasActiveBet(false);
+         }
+         setHasActiveBet(false); // Reset for next round regardless
+      } else {
+         setIsPlaying(false);
+         setIsCrashed(false);
+         setMultiplier(1.00);
+         setMultiplierPoints([{ x: 0, y: 1.00 }]);
+         
+         // Idle the sound engine
+         audioManager.stopRide();
+
+         // Local countdown estimation
+         const sTime = data.startTime;
+         const cd = Math.max(0, Math.ceil((sTime - Date.now()) / 1000));
+         setGlobalCountdown(cd);
+      }
+    };
+
     // --- GLOBAL GAME SYNC ---
     const unsubGame = onSnapshot(doc(db, 'game', 'current'), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        
-        // On Round Change
-        if (data.roundId !== globalRoundIdRef.current) {
-          globalRoundIdRef.current = data.roundId;
-          setHasCashedOut(false);
-          setCashedOutMultiplier(null);
-          setMultiplierPoints([{ x: 0, y: 1 }]);
-          
-          // Place Queued Bet
-          if (isBetQueuedRef.current && userRef.current) {
-             const b = betAmountRef.current;
-             if (balanceRef.current >= b) {
-                setHasActiveBet(true);
-                updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
-                setWithdrawableBalance(prev => Math.max(0, prev - b));
-                setIsBetQueued(false);
-             }
-          } else if (isAutoPlayRef.current && userRef.current) {
-             const b = betAmountRef.current;
-             if (balanceRef.current >= b) {
-                setHasActiveBet(true);
-                updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
-                setWithdrawableBalance(prev => Math.max(0, prev - b));
-             }
-          }
-        }
-
-        setGlobalStatus(data.status);
-        setCrashPoint(data.crashPoint);
-        setCrashReason(data.crashReason);
-        crashPointRef.current = data.crashPoint;
-
-        if (data.status === 'IN_PROGRESS') {
-           setIsPlaying(true);
-           setIsCrashed(false);
-           // Canonical sync: use the server's intentional start time
-           startTimeRef.current = data.startTime;
-        } else if (data.status === 'CRASHED') {
-           setIsCrashed(true);
-           setIsPlaying(false);
-           setMultiplier(data.crashPoint);
-           
-           // Settle Loss
-           if (hasActiveBetRef.current && !hasCashedOutRef.current && userRef.current) {
-              saveGameHistory(userRef.current.uid, {
-                 betAmount: betAmountRef.current,
-                 multiplier: data.crashPoint,
-                 winAmount: 0,
-                 status: 'loss'
-              });
-              setHasActiveBet(false);
-           }
-           setHasActiveBet(false); // Reset for next round regardless
-        } else {
-           setIsPlaying(false);
-           setIsCrashed(false);
-           setMultiplier(1.00);
-           // Local countdown estimation
-           const sTime = data.startTime;
-           const cd = Math.max(0, Math.ceil((sTime - Date.now()) / 1000));
-           setGlobalCountdown(cd);
-        }
+      if (isCurrent && snapshot.exists()) {
+        handleGameUpdate(snapshot.data());
       }
     }, (err) => {
       console.error("Firestore onSnapshot error:", err);
+      if (!isCurrent) return;
       // Fallback: Start SMARTER local game loop if Firestore sync is blocked
       if (err.message.includes("permission") || err.message.includes("insufficient")) {
         console.warn("Starting SMOOTH local game loop fallback due to permission issues.");
-        let localStartTime = Date.now() + 5000;
-        let crashedAt: number | null = null;
         
-        const interval = setInterval(() => {
+        let currentStatus: 'WAITING' | 'IN_PROGRESS' | 'CRASHED' = 'WAITING';
+        let roundId = "fallback_" + Math.random().toString(36).substring(2, 9);
+        let startTime = Date.now() + 5000;
+        let crashPoint = 1.5;
+        let crashTime = 0;
+        let crashedUntil = 0;
+
+        intervalId = setInterval(() => {
+          if (!isCurrent) {
+            clearInterval(intervalId);
+            return;
+          }
           const now = Date.now();
-          if (crashedAt) {
-            if (now >= crashedAt + 4000) {
-              crashedAt = null;
-              localStartTime = Date.now() + 5000;
-              setHasCashedOut(false);
-              setCashedOutMultiplier(null);
-              setMultiplierPoints([{ x: 0, y: 1 }]);
+          if (currentStatus === 'WAITING') {
+            if (now < startTime) {
+              handleGameUpdate({
+                status: 'WAITING',
+                startTime: startTime,
+                roundId: roundId,
+                crashPoint: 1.00
+              });
             } else {
-              setGlobalStatus('CRASHED');
-              setIsCrashed(true);
-              setIsPlaying(false);
+              // Transition to IN_PROGRESS
+              currentStatus = 'IN_PROGRESS';
+              roundId = "fallback_" + Math.random().toString(36).substring(2, 9);
+              startTime = Date.now();
+              const rand = Math.random();
+              crashPoint = rand < 0.1 ? 1.00 : parseFloat((1.01 + Math.exp(Math.random() * 2.2)).toFixed(2));
+              const durationMs = (Math.log(crashPoint) / 0.06) * 1000;
+              crashTime = startTime + durationMs;
+              
+              handleGameUpdate({
+                status: 'IN_PROGRESS',
+                startTime: startTime,
+                crashPoint: crashPoint,
+                roundId: roundId
+              });
             }
-          } else if (now < localStartTime) {
-             setGlobalStatus('WAITING');
-             setGlobalCountdown(Math.ceil((localStartTime - now)/1000));
-             setMultiplier(1.00);
-             setIsPlaying(false);
-             setIsCrashed(false);
-          } else {
-             setGlobalStatus('IN_PROGRESS');
-             startTimeRef.current = localStartTime;
-             const elapsed = (now - localStartTime) / 1000;
-             const m = Math.pow(Math.E, 0.06 * elapsed);
-             if (m > 10) { // Reset loop at 10x for fallback
-                setGlobalStatus('CRASHED');
-                setMultiplier(10.00);
-                setIsCrashed(true);
-                setIsPlaying(false);
-                crashedAt = now;
-             } else {
-                setIsPlaying(true);
-                setIsCrashed(false);
-                setMultiplier(m);
-             }
+          } else if (currentStatus === 'IN_PROGRESS') {
+            if (now >= crashTime) {
+              // Transition to CRASHED
+              currentStatus = 'CRASHED';
+              crashedUntil = now + 4000;
+              handleGameUpdate({
+                status: 'CRASHED',
+                crashPoint: crashPoint,
+                roundId: roundId
+              });
+            }
+          } else if (currentStatus === 'CRASHED') {
+            if (now >= crashedUntil) {
+              // Transition to WAITING
+              currentStatus = 'WAITING';
+              roundId = "fallback_" + Math.random().toString(36).substring(2, 9);
+              startTime = Date.now() + 5000;
+              handleGameUpdate({
+                status: 'WAITING',
+                startTime: startTime,
+                roundId: roundId,
+                crashPoint: 1.00
+              });
+            }
           }
         }, 100);
-        return () => clearInterval(interval);
       }
       setError("Sync failed: Check permissions or configuration. ❌");
     });
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!isCurrent) return;
       if (firebaseUser) {
         const profile = await syncUserProfile(firebaseUser);
+        if (!isCurrent) return;
         setUser({ ...firebaseUser, ...profile });
         if (profile) {
           const profileData = profile as any;
@@ -288,18 +333,25 @@ export default function App() {
     });
 
     return () => {
+      isCurrent = false;
       unsubscribeAuth();
       unsubGame();
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      audioManager.stopRide();
     };
   }, []);
 
   // Real-time Balance and Block Status Sync from Firestore
   useEffect(() => {
+    let isCurrent = true;
     if (!user) {
       setIsBlocked(false);
       return;
     }
     const unsub = onSnapshot(doc(db, 'users', user.uid), (doc) => {
+      if (!isCurrent) return;
       if (doc.exists()) {
         const data = doc.data();
         const curActiveCoin = data.activeCoin || 'INR';
@@ -318,11 +370,15 @@ export default function App() {
         setIsBlocked(!!data.isBlocked);
       }
     });
-    return () => unsub();
+    return () => {
+      isCurrent = false;
+      unsub();
+    };
   }, [user?.uid]);
 
   // Real-time GLOBAL History Sync
   useEffect(() => {
+    let isCurrent = true;
     const q = query(
       collection(db, 'globalHistory'),
       orderBy('createdAt', 'desc'),
@@ -330,6 +386,7 @@ export default function App() {
     );
     setIsHistoryLoading(true);
     const unsub = onSnapshot(q, (snapshot) => {
+      if (!isCurrent) return;
       const historyData = snapshot.docs.map(doc => {
         const data = doc.data();
         let timeStr = 'Just now';
@@ -363,7 +420,10 @@ export default function App() {
       setHistory(historyData as any);
       setIsHistoryLoading(false);
     });
-    return () => unsub();
+    return () => {
+      isCurrent = false;
+      unsub();
+    };
   }, []);
 
   const handleGuestLogin = async (guestUser: any) => {
@@ -466,6 +526,7 @@ export default function App() {
     }
     
     console.log(`[GAME] Cashed out at ${currentMult}x for ₹${winAmount}`);
+    audioManager.playCashout();
   };
 
   const updateMultiplier = (timestamp: number) => {
@@ -491,23 +552,41 @@ export default function App() {
     const currentMultiplier = Math.pow(Math.E, 0.06 * (elapsed / 1000));
     const targetCrash = crashPointRef.current || 2;
 
+    const timeElapsed = elapsed / 1000;
     if (currentMultiplier >= targetCrash) {
       setMultiplier(targetCrash);
       setIsCrashed(true);
       setIsPlaying(false);
       
+      // Stop engine & trigger crash explosion sound
+      audioManager.playCrash();
+      
+      setMultiplierPoints(prev => {
+        const lastPoint = prev[prev.length - 1];
+        if (!lastPoint || targetCrash > lastPoint.y) {
+          return [...prev, { x: timeElapsed, y: targetCrash }].slice(-100);
+        }
+        return prev;
+      });
+
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = 0;
       }
     } else {
       setMultiplier(currentMultiplier);
-      // Fixed point addition logic (sync with time instead of modulo)
-      const lastPoint = multiplierPoints[multiplierPoints.length - 1];
-      const timeElapsed = elapsed / 1000;
-      if (!lastPoint || timeElapsed - lastPoint.x > 0.05) {
-         setMultiplierPoints(prev => [...prev, { x: timeElapsed, y: currentMultiplier }].slice(-100));
-      }
+      
+      // Update engine rev pitch
+      audioManager.updateMultiplier(currentMultiplier);
+      
+      setMultiplierPoints(prev => {
+        const lastPoint = prev[prev.length - 1];
+        if (!lastPoint || (currentMultiplier > lastPoint.y && timeElapsed - lastPoint.x > 0.03)) {
+          return [...prev, { x: timeElapsed, y: currentMultiplier }].slice(-100);
+        }
+        return prev;
+      });
+
       animationRef.current = requestAnimationFrame(updateMultiplier);
     }
   };
@@ -1564,6 +1643,19 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-4 md:gap-6">
+          {/* Audio Sound Toggle */}
+          <button 
+            onClick={toggleSound}
+            className="p-2 bg-black/40 border border-zinc-800 hover:border-[#FFD700]/50 hover:bg-black/80 text-zinc-400 hover:text-white transition-all rounded-lg cursor-pointer flex items-center justify-center h-9 w-9"
+            title={isMuted ? "Unmute sounds" : "Mute sounds"}
+          >
+            {isMuted ? (
+              <VolumeX className="w-4.5 h-4.5 text-red-500" />
+            ) : (
+              <Volume2 className="w-4.5 h-4.5 text-green-500" />
+            )}
+          </button>
+
           {user ? (
             <div className="flex items-center gap-4">
               <div className="hidden sm:flex items-center gap-3 border-r border-zinc-800 pr-6">
