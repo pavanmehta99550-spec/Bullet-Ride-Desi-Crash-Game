@@ -65,15 +65,16 @@ export default function App() {
   const [withdrawableBalance, setWithdrawableBalance] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isAutoPlay, setIsAutoPlay] = useState(false);
-  const [autoPlayTimer, setAutoPlayTimer] = useState<number | null>(null);
+  const [globalStatus, setGlobalStatus] = useState<'WAITING' | 'IN_PROGRESS' | 'CRASHED'>('WAITING');
+  const [globalCountdown, setGlobalCountdown] = useState<number>(0);
   const [isBetQueued, setIsBetQueued] = useState(false);
   const [hasActiveBet, setHasActiveBet] = useState(false);
 
   const [multiplierPoints, setMultiplierPoints] = useState<{ x: number, y: number }[]>([]);
   const animationRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
-  const nextRoundData = useRef<{ roundId: string; crashPoint: number; crashReason: string } | null>(null);
-  const currentRoundId = useRef<string | null>(null);
+  const globalRoundIdRef = useRef<string | null>(null);
+  const activeCoinRef = useRef<string>('INR');
 
   // Sync refs to avoid stale closures in core intervals
   const isAutoPlayRef = useRef(isAutoPlay);
@@ -99,18 +100,7 @@ export default function App() {
   useEffect(() => { multiplierRef.current = multiplier; }, [multiplier]);
   useEffect(() => { hasActiveBetRef.current = hasActiveBet; }, [hasActiveBet]);
   useEffect(() => { hasCashedOutRef.current = hasCashedOut; }, [hasCashedOut]);
-
-  // Pre-fetch next round data
-  const prefetchNextRound = async () => {
-    try {
-      const data = await safeFetchJson('/api/round/get-data', { method: 'POST' });
-      nextRoundData.current = data;
-      setError(null); // Clear any previous network errors
-    } catch (err: any) {
-      // Gracefully capture log without crashing or spamming console with HTML error traces
-      console.warn("Prefetch next round failed:", err.message || err);
-    }
-  };
+  useEffect(() => { activeCoinRef.current = activeCoin; }, [activeCoin]);
 
   const fetchCoins = async () => {
     try {
@@ -123,28 +113,78 @@ export default function App() {
     }
   };
 
-  const startCountdown = () => {
-    setAutoPlayTimer(5);
-  };
-
   useEffect(() => {
-    if (autoPlayTimer !== null && autoPlayTimer > 0) {
-      const timer = setTimeout(() => {
-        setAutoPlayTimer(prev => (prev !== null ? prev - 1 : null));
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (autoPlayTimer === 0) {
-      setAutoPlayTimer(null);
-      startRound(true);
-    }
-  }, [autoPlayTimer]);
-
-  useEffect(() => {
-    prefetchNextRound(); // Initial prefetch
     fetchCoins();
-    startCountdown(); // Infinite loop starts right here
+    
+    // --- GLOBAL GAME SYNC ---
+    const unsubGame = onSnapshot(doc(db, 'game', 'current'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        
+        // On Round Change
+        if (data.roundId !== globalRoundIdRef.current) {
+          globalRoundIdRef.current = data.roundId;
+          setHasCashedOut(false);
+          setCashedOutMultiplier(null);
+          setMultiplierPoints([{ x: 0, y: 1 }]);
+          
+          // Place Queued Bet
+          if (isBetQueuedRef.current && userRef.current) {
+             const b = betAmountRef.current;
+             if (balanceRef.current >= b) {
+                setHasActiveBet(true);
+                updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
+                setWithdrawableBalance(prev => Math.max(0, prev - b));
+                setIsBetQueued(false);
+             }
+          } else if (isAutoPlayRef.current && userRef.current) {
+             const b = betAmountRef.current;
+             if (balanceRef.current >= b) {
+                setHasActiveBet(true);
+                updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
+                setWithdrawableBalance(prev => Math.max(0, prev - b));
+             }
+          }
+        }
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        setGlobalStatus(data.status);
+        setCrashPoint(data.crashPoint);
+        setCrashReason(data.crashReason);
+        crashPointRef.current = data.crashPoint;
+
+        if (data.status === 'IN_PROGRESS') {
+           setIsPlaying(true);
+           setIsCrashed(false);
+           startTimeRef.current = data.serverTime?.toMillis() || data.startTime;
+        } else if (data.status === 'CRASHED') {
+           setIsCrashed(true);
+           setIsPlaying(false);
+           setMultiplier(data.crashPoint);
+           
+           // Settle Loss
+           if (hasActiveBetRef.current && !hasCashedOutRef.current && userRef.current) {
+              saveGameHistory(userRef.current.uid, {
+                 betAmount: betAmountRef.current,
+                 multiplier: data.crashPoint,
+                 winAmount: 0,
+                 status: 'loss'
+              });
+              setHasActiveBet(false);
+           }
+           setHasActiveBet(false); // Reset for next round regardless
+        } else {
+           setIsPlaying(false);
+           setIsCrashed(false);
+           setMultiplier(1.00);
+           // Local countdown estimation
+           const sTime = data.serverTime?.toMillis() || data.startTime;
+           const cd = Math.max(0, Math.ceil((sTime - Date.now()) / 1000));
+           setGlobalCountdown(cd);
+        }
+      }
+    });
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const profile = await syncUserProfile(firebaseUser);
         setUser({ ...firebaseUser, ...profile });
@@ -179,7 +219,8 @@ export default function App() {
     });
 
     return () => {
-      unsubscribe();
+      unsubscribeAuth();
+      unsubGame();
     };
   }, []);
 
@@ -256,10 +297,10 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const startRound = async (isAutoStart = false) => {
+  const startRound = () => {
     // If running manually and user is not logged in, show Auth modal
     const currentUser = userRef.current;
-    if (!currentUser && !isAutoStart) {
+    if (!currentUser) {
       setShowAuthModal(true);
       return;
     }
@@ -271,103 +312,27 @@ export default function App() {
       return;
     }
 
-    setAutoPlayTimer(null);
-
-    setIsCrashed(false);
-    setHasCashedOut(false);
-    setCashedOutMultiplier(null);
-    setMultiplier(1.00);
-    setMultiplierPoints([{ x: 0, y: 1 }]);
-    setError(null);
-    setAutoPlayTimer(null);
-
-    // Lock in the bet for this round using the latest ref values
-    const currentBetAmount = betAmountRef.current;
-    const currentBalance = balanceRef.current;
-    const queued = isBetQueuedRef.current;
-    const autoPlayActive = isAutoPlayRef.current;
-
-    if (currentUser && (queued || (autoPlayActive && currentBalance >= currentBetAmount))) {
-      setHasActiveBet(true);
-      const newBalance = currentBalance - currentBetAmount;
-      updateUserBalance(currentUser.uid, newBalance, activeCoin);
-      setWithdrawableBalance(prev => Math.max(0, prev - currentBetAmount));
-      setIsBetQueued(false); // Reset queue
+    // Queue Bet for next round
+    if (globalStatus === 'WAITING') {
+       if (balanceRef.current >= betAmountRef.current) {
+          setHasActiveBet(true);
+          updateUserBalance(currentUser.uid, balanceRef.current - betAmountRef.current, activeCoinRef.current);
+          setWithdrawableBalance(prev => Math.max(0, prev - betAmountRef.current));
+       } else {
+          setError("Balance kam hai bhai!");
+          setTimeout(() => setError(null), 3000);
+       }
     } else {
-      setHasActiveBet(false);
-    }
-
-    // Use pre-fetched data or fetch fresh
-    if (nextRoundData.current) {
-      const { roundId, crashPoint, crashReason, isOverride } = nextRoundData.current;
-      console.log(`[GAME] Starting round with ${isOverride ? 'OVERRIDE' : 'RANDOM'} crash point: ${crashPoint}x (Round ID: ${roundId})`);
-      
-      // If it was an override, notify server to consume it so it doesn't repeat
-      if (isOverride) {
-        fetch('/api/admin/consume-override', { method: 'POST' }).catch(e => console.warn("Failed to consume override:", e));
-      }
-
-      // Update refs directly to avoid state race condition
-      currentRoundId.current = roundId;
-      crashPointRef.current = crashPoint;
-      setCrashPoint(crashPoint);
-      setCrashReason(crashReason);
-      
-      nextRoundData.current = null;
-      setIsPlaying(true);
-      prefetchNextRound(); // Fetch the one after this
-    } else {
-      setLoading(true);
-      try {
-        const data = await safeFetchJson('/api/round/start', { method: 'POST' });
-        
-        // Update refs directly
-        currentRoundId.current = data.roundId;
-        crashPointRef.current = data.crashPoint;
-        setCrashPoint(data.crashPoint);
-        setCrashReason(data.crashReason);
-        
-        setIsPlaying(true);
-        prefetchNextRound();
-      } catch (err: any) {
-        console.warn("Express server unavailable, proceeding with local ride simulation.");
-        const rand = Math.random();
-        let localCrashPoint;
-        if (rand < 0.5) {
-          localCrashPoint = 1.00 + (Math.random() * 1.00);
-        } else if (rand < 0.8) {
-          localCrashPoint = 2.00 + (Math.random() * 3.00);
-        } else {
-          localCrashPoint = 5.00 + (Math.random() * 5.00);
-        }
-        const finalCrashPoint = parseFloat(localCrashPoint.toFixed(2));
-        const finalCrashReasons = [
-          "Challan kat gaya 👮‍♂️",
-          "Saand samne aa gaya 🐂",
-          "Pothole me gir gaye 🕳️",
-          "Mama ne pakad liya 🚓",
-          "Petrol khatam ho gaya ⛽",
-          "Tyre puncture ho gaya 📌",
-          "Aage traffic jam hai 🚥",
-          "Raste me JCB ki khudai chal rahi hai 🚜",
-          "Papa ki pari ne takkar maar di 🛴"
-        ];
-        const finalCrashReason = finalCrashReasons[Math.floor(Math.random() * finalCrashReasons.length)];
-        
-        setCrashPoint(finalCrashPoint);
-        setCrashReason(finalCrashReason);
-        setIsPlaying(true);
-        setError(null);
-      } finally {
-        setLoading(false);
-      }
+       // Queue for the one after this
+       setIsBetQueued(true);
+       showAdminStatus("Ride is in progress. Bet Queued for next round! 🏁", 'success', 3000);
     }
   };
 
   const cashOut = () => {
-    if (hasCashedOut || isCrashed || !isPlaying || !hasActiveBet) return;
+    if (hasCashedOut || isCrashed || !isPlaying || !hasActiveBet || globalStatus !== 'IN_PROGRESS') return;
     
-    // Calculate final win
+    // Calculate final win using current live multiplier
     const currentMult = multiplier;
     const currentBet = betAmountRef.current;
     const currentBal = balanceRef.current;
@@ -380,8 +345,8 @@ export default function App() {
     const currentUser = userRef.current;
     if (currentUser) {
       const newBalance = currentBal + winAmount;
-      updateUserBalance(currentUser.uid, newBalance, activeCoin);
-      // Add only current profit
+      updateUserBalance(currentUser.uid, newBalance, activeCoinRef.current);
+      // Add only current profit to withdrawable tracking
       setWithdrawableBalance(prev => prev + winAmount);
       
       // Save to Firestore History
@@ -393,12 +358,12 @@ export default function App() {
       });
     }
     
-    console.log(`Cashed out at ${currentMult}x for ₹${winAmount}`);
+    console.log(`[GAME] Cashed out at ${currentMult}x for ₹${winAmount}`);
   };
 
   const updateMultiplier = (timestamp: number) => {
-    // If we are no longer playing or already crashed, or if crashPoint is missing, abort frame loop!
-    if (!isPlayingRef.current || isCrashedRef.current || !crashPointRef.current) {
+    // If we are no longer playing or already crashed, or if global status changed, abort frame loop
+    if (globalStatus !== 'IN_PROGRESS' || isCrashedRef.current || !startTimeRef.current) {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = 0;
@@ -406,56 +371,34 @@ export default function App() {
       return;
     }
 
-    if (!startTimeRef.current) {
-      startTimeRef.current = timestamp;
+    const now = Date.now();
+    const elapsed = now - startTimeRef.current;
+    
+    if (elapsed < 0) {
+      setMultiplier(1.00);
+      animationRef.current = requestAnimationFrame(updateMultiplier);
+      return;
     }
 
-    const elapsed = timestamp - startTimeRef.current;
-    // Faster growth curve: reaches ~10x in about 4 seconds
-    const currentMultiplier = Math.exp(elapsed * 0.0006);
-    const targetCrash = crashPointRef.current;
+    // Standard multiplier growth: 1.00 * e^(0.06 * t)
+    const currentMultiplier = Math.pow(Math.E, 0.06 * (elapsed / 1000));
+    const targetCrash = crashPointRef.current || 2;
 
     if (currentMultiplier >= targetCrash) {
-      const finalMultiplier = targetCrash;
+      setMultiplier(targetCrash);
+      setIsCrashed(true);
+      setIsPlaying(false);
       
-      // Stop recursion instantly
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = 0;
       }
-
-      setMultiplier(finalMultiplier);
-      setIsCrashed(true);
-      setIsPlaying(false);
-      
-      // Save to Global History for real-time updates
-      if (currentRoundId.current) {
-        saveGlobalHistory(currentRoundId.current, finalMultiplier);
-      }
-
-      // Save Loss to History using fresh ref values
-      const currentUser = userRef.current;
-      if (currentUser && hasActiveBetRef.current && !hasCashedOutRef.current) {
-        saveGameHistory(currentUser.uid, {
-            betAmount: betAmountRef.current,
-            multiplier: finalMultiplier,
-            winAmount: 0,
-            status: 'loss'
-        });
-      }
-
-      setHasActiveBet(false);
-      setIsBetQueued(false); // Reset queue
-
-      // Brief hold (3 seconds) on crash details, then proceed automatically to countdown
-      setTimeout(() => {
-        setIsCrashed(false);
-        startCountdown();
-      }, 3000);
     } else {
       setMultiplier(currentMultiplier);
-      // Update points for the chart - update every frame for max smoothness
-      setMultiplierPoints(prev => [...prev, { x: elapsed / 1000, y: currentMultiplier }]);
+      // Limit points for performance
+      if (multiplierPoints.length % 5 === 0) {
+         setMultiplierPoints(prev => [...prev, { x: elapsed / 1000, y: currentMultiplier }]);
+      }
       animationRef.current = requestAnimationFrame(updateMultiplier);
     }
   };
@@ -1048,6 +991,12 @@ export default function App() {
       />
 
       {/* Admin Toggle */}
+      <style>{`
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #0F0F0F; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+      `}</style>
       <button 
         onClick={() => setShowAdmin(!showAdmin)}
         className="fixed bottom-20 right-4 z-50 bg-[#FFD700] p-3 rounded-xl hover:bg-white transition-all shadow-[0_0_20px_rgba(255,215,0,0.3)] flex items-center gap-2 group border-2 border-white/20"
@@ -1066,6 +1015,32 @@ export default function App() {
             className="fixed bottom-0 left-0 right-0 z-40 bg-[#1A1A1A] border-t-4 border-[#FFD700] p-6 shadow-[0_-10px_50px_rgba(0,0,0,0.8)] max-h-[500px] overflow-y-auto"
           >
             <div className="max-w-4xl mx-auto">
+              {/* Status Message */}
+              <AnimatePresence>
+                {adminStatus && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ 
+                      opacity: 1, 
+                      y: 0, 
+                      scale: [1, 1.02, 1],
+                    }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ 
+                      scale: { repeat: Infinity, duration: 1.5, ease: "easeInOut" }
+                    }}
+                    className={`mt-6 p-4 rounded-xl border-2 flex items-center justify-center gap-3 ${
+                      adminStatus.type === 'success' 
+                        ? 'bg-yellow-500/10 border-[#FFD700] text-[#FFD700]' 
+                        : 'bg-red-500/10 border-red-500 text-red-500'
+                    }`}
+                  >
+                    <div className={`w-2 h-2 rounded-full animate-ping ${adminStatus.type === 'success' ? 'bg-[#FFD700]' : 'bg-red-500'}`} />
+                    <span className="font-black uppercase italic text-sm tracking-widest">{adminStatus.message}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {!isAdminAuthenticated ? (
                 <div className="flex flex-col items-center justify-center py-10 space-y-4">
                   <h3 className="text-[#FFD700] font-black uppercase italic text-xl">Admin Verification Required</h3>
@@ -2232,22 +2207,28 @@ export default function App() {
             <div className={`mt-6 inline-block px-10 py-3 border-2 transition-all duration-300 ${
               isCrashed ? 'border-red-600 text-red-600 bg-red-600/10' : hasCashedOut ? 'border-green-500 text-green-500 bg-green-500/10' : isPlaying ? 'border-[#FFD700] text-[#FFD700] bg-[#FFD700]/10' : 'border-zinc-800 text-zinc-800'
             } text-2xl font-black uppercase tracking-widest skew-x-[-10deg]`}>
-              {isCrashed ? 'CRASHED!' : hasCashedOut ? 'SUCCESSFUL EXIT' : isPlaying ? 'RIDING HARD' : 'READY TO ROLL'}
+              {isCrashed ? 'CRASHED!' : hasCashedOut ? 'SUCCESSFUL EXIT' : isPlaying ? 'RIDING HARD' : (globalStatus === 'WAITING' ? 'READY IN GARAGE' : 'CONNECTING...')}
             </div>
             
-            {autoPlayTimer !== null && (
-              <div className="mt-8 relative h-2 w-64 bg-zinc-800 rounded-full overflow-hidden mx-auto">
+            {globalStatus === 'WAITING' && (
+              <div className="mt-8 relative h-2 w-64 bg-zinc-800 rounded-full overflow-hidden mx-auto border border-white/5">
                 <motion.div 
-                  initial={{ width: '100%' }}
-                  animate={{ width: `${(autoPlayTimer / 5) * 100}%` }}
-                  transition={{ duration: 1, ease: 'linear' }}
-                  className="h-full bg-[#FFD700]"
+                   key={globalRoundIdRef.current}
+                   initial={{ width: '100%' }}
+                   animate={{ width: `${(globalCountdown / 8) * 100}%` }}
+                   transition={{ duration: 1, ease: 'linear' }}
+                   className="h-full bg-[#FFD700] shadow-[0_0_10px_#FFD700]"
                 />
-                <div className="absolute inset-0 flex items-center justify-center text-[8px] font-black uppercase text-white mix-blend-difference">
-                  Next Ride in {autoPlayTimer}s
+                <div className="absolute inset-0 flex items-center justify-center text-[9px] font-black uppercase text-white mix-blend-difference tracking-tighter">
+                  Next Thump in {globalCountdown}s
                 </div>
               </div>
             )}
+            
+            <div className="mt-4 flex items-center justify-center gap-2">
+               <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+               <span className="text-[8px] font-black uppercase tracking-widest text-zinc-600 italic">Global Sync Active</span>
+            </div>
             
             {error && (
               <p className="text-red-500 font-bold mt-4 uppercase tracking-wider">{error}</p>

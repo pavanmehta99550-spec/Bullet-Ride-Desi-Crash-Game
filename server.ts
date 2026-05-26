@@ -254,8 +254,76 @@ async function startServer() {
     res.json({ status: "ok", message: "User status updated!" });
   });
 
-  // --- GAME LOGIC ---
-  let nextRoundState = generateRoundData(false);
+  // --- GAME LOGIC (Synchronized Global Loop) ---
+  let globalRound = {
+    status: 'WAITING',
+    roundId: Date.now().toString(),
+    startTime: Date.now() + 8000,
+    crashPoint: 2.00,
+    crashReason: "Engine Phat Gaya! 🧨",
+    lastResetTime: Date.now()
+  };
+
+  async function broadcastGlobalState() {
+    if (!db) return;
+    try {
+      await db.collection('game').doc('current').set({
+        ...globalRound,
+        serverTime: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      console.error("[LOOP] Broadcast failed:", e);
+    }
+  }
+
+  function startNewRound() {
+    const data = generateRoundData(true); // Consumes override logic
+    globalRound = {
+      status: 'WAITING',
+      roundId: data.roundId,
+      startTime: Date.now() + 8000, // 8s countdown
+      crashPoint: data.crashPoint,
+      crashReason: data.crashReason,
+      lastResetTime: Date.now()
+    };
+    console.log(`[LOOP] New Round: ${globalRound.crashPoint}x (ID: ${globalRound.roundId})`);
+    broadcastGlobalState();
+  }
+
+  // Use a stable heartbeat for the global game loop
+  setInterval(async () => {
+    const now = Date.now();
+    if (globalRound.status === 'WAITING' && now >= globalRound.startTime) {
+      globalRound.status = 'IN_PROGRESS';
+      // Adjust startTime to be exactly 'now' for synced calculating
+      globalRound.startTime = now; 
+      broadcastGlobalState();
+    } else if (globalRound.status === 'IN_PROGRESS') {
+      const elapsed = (now - globalRound.startTime) / 1000;
+      // Standard crash multiplier formula: 1.00 * e^(0.06 * t)
+      const currentMult = Math.pow(Math.E, 0.06 * elapsed);
+      if (currentMult >= globalRound.crashPoint) {
+        globalRound.status = 'CRASHED';
+        globalRound.lastResetTime = now;
+        broadcastGlobalState();
+        
+        // Save to Global History
+        if (db) {
+          db.collection('globalHistory').doc(globalRound.roundId).set({
+            id: globalRound.roundId,
+            multiplier: globalRound.crashPoint,
+            createdAt: now,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          }).catch(console.error);
+        }
+      }
+    } else if (globalRound.status === 'CRASHED' && now >= globalRound.lastResetTime + 4000) {
+      startNewRound();
+    }
+  }, 500);
+
+  // Initialize first round
+  setTimeout(startNewRound, 2000);
 
   function generateRoundData(shouldConsume = false) {
     let crashPoint: number;
