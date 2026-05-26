@@ -155,7 +155,8 @@ export default function App() {
         if (data.status === 'IN_PROGRESS') {
            setIsPlaying(true);
            setIsCrashed(false);
-           startTimeRef.current = data.serverTime?.toMillis() || data.startTime;
+           // Canonical sync: use the server's intentional start time
+           startTimeRef.current = data.startTime;
         } else if (data.status === 'CRASHED') {
            setIsCrashed(true);
            setIsPlaying(false);
@@ -177,24 +178,35 @@ export default function App() {
            setIsCrashed(false);
            setMultiplier(1.00);
            // Local countdown estimation
-           const sTime = data.serverTime?.toMillis() || data.startTime;
+           const sTime = data.startTime;
            const cd = Math.max(0, Math.ceil((sTime - Date.now()) / 1000));
            setGlobalCountdown(cd);
         }
       }
     }, (err) => {
       console.error("Firestore onSnapshot error:", err);
-      // Fallback: Start local game loop if Firestore sync is blocked
-      if (err.message.includes("permission")) {
-        console.warn("Starting LOCAL game loop fallback due to permission issues.");
+      // Fallback: Start SMARTER local game loop if Firestore sync is blocked
+      if (err.message.includes("permission") || err.message.includes("insufficient")) {
+        console.warn("Starting SMOOTH local game loop fallback due to permission issues.");
+        const localStartTime = Date.now() + 5000;
         const interval = setInterval(() => {
-           setGlobalStatus(prev => {
-             if (prev === 'CRASHED') return 'WAITING';
-             if (prev === 'WAITING') return 'IN_PROGRESS';
-             return prev;
-           });
-           setMultiplier(m => m + 0.1);
-        }, 1000);
+          const now = Date.now();
+          if (now < localStartTime) {
+             setGlobalStatus('WAITING');
+             setGlobalCountdown(Math.ceil((localStartTime - now)/1000));
+             setMultiplier(1.00);
+          } else {
+             setGlobalStatus('IN_PROGRESS');
+             const elapsed = (now - localStartTime) / 1000;
+             const m = Math.pow(Math.E, 0.06 * elapsed);
+             if (m > 10) { // Reset loop at 10x for fallback
+                setGlobalStatus('CRASHED');
+                // timeout for reset state handled by outside loop or re-trigger
+             } else {
+                setMultiplier(m);
+             }
+          }
+        }, 100);
         return () => clearInterval(interval);
       }
       setError("Sync failed: Check permissions or configuration. ❌");
@@ -411,9 +423,11 @@ export default function App() {
       }
     } else {
       setMultiplier(currentMultiplier);
-      // Limit points for performance
-      if (multiplierPoints.length % 5 === 0) {
-         setMultiplierPoints(prev => [...prev, { x: elapsed / 1000, y: currentMultiplier }]);
+      // Fixed point addition logic (sync with time instead of modulo)
+      const lastPoint = multiplierPoints[multiplierPoints.length - 1];
+      const timeElapsed = elapsed / 1000;
+      if (!lastPoint || timeElapsed - lastPoint.x > 0.05) {
+         setMultiplierPoints(prev => [...prev, { x: timeElapsed, y: currentMultiplier }].slice(-100));
       }
       animationRef.current = requestAnimationFrame(updateMultiplier);
     }
