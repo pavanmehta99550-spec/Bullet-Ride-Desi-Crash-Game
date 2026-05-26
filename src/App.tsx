@@ -325,6 +325,44 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  const handleGuestLogin = async (guestUser: any) => {
+    setAuthLoading(true);
+    try {
+      const profile = await syncUserProfile(guestUser);
+      setUser({ ...guestUser, ...profile });
+      if (profile) {
+        const profileData = profile as any;
+        const curActiveCoin = profileData.activeCoin || 'INR';
+        const dBalances = profileData.coinBalances || {};
+        const mergedBalances = {
+          INR: dBalances.INR !== undefined ? dBalances.INR : (profileData.walletBalance || 0),
+          BTC: dBalances.BTC || 0,
+          ETH: dBalances.ETH || 0,
+          USDT: dBalances.USDT || 0,
+          SOL: dBalances.SOL || 0,
+          DOGE: dBalances.DOGE || 0
+        };
+        setActiveCoin(curActiveCoin);
+        setCoinBalances(mergedBalances);
+        setBalance(mergedBalances[curActiveCoin] || 0);
+        setWithdrawableBalance(mergedBalances[curActiveCoin] || 0);
+        setIsBlocked(!!profileData.isBlocked);
+      }
+    } catch (e) {
+      console.warn("Guest profile sync failed, falling back to clean local representation", e);
+      // Clean default starting balances for developers/testers to have fun instantly!
+      const dBalances = { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500 };
+      setUser(guestUser);
+      setActiveCoin('INR');
+      setCoinBalances(dBalances);
+      setBalance(50000);
+      setWithdrawableBalance(50000);
+      setIsBlocked(false);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const startRound = () => {
     // If running manually and user is not logged in, show Auth modal
     const currentUser = userRef.current;
@@ -1016,6 +1054,7 @@ export default function App() {
       <AuthModal 
         isOpen={showAuthModal} 
         onClose={() => setShowAuthModal(false)} 
+        onGuestLogin={handleGuestLogin}
       />
 
       {/* Admin Toggle */}

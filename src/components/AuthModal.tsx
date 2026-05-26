@@ -15,15 +15,63 @@ import {
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onGuestLogin?: (guestUser: any) => void;
 }
 
-export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalProps) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleDemoOrGuestLogin = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Try to sign in or sign up with a predefined credential first
+      const demoEmail = 'guest.rider@thump.com';
+      const demoPass = 'thump12345';
+      
+      try {
+        await signInWithEmailAndPassword(auth, demoEmail, demoPass);
+        onClose();
+        return;
+      } catch (signInErr: any) {
+        if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
+          try {
+            const userCredential = await createUserWithEmailAndPassword(auth, demoEmail, demoPass);
+            await updateProfile(userCredential.user, { displayName: "Super Rider 🏍️" });
+            onClose();
+            return;
+          } catch (signUpErr: any) {
+            console.warn("Demo credentials sign-up failed, falling back to local guest session", signUpErr);
+          }
+        } else {
+          console.warn("Demo credentials sign-in failed, falling back to local guest session", signInErr);
+        }
+      }
+      
+      // Direct local guest fallback
+      if (onGuestLogin) {
+        onGuestLogin({
+          uid: 'guest_rider_local_session',
+          email: 'guest.rider@thump.local',
+          displayName: 'Local Guest Rider 🏍️',
+          isAnonymous: true,
+          photoURL: null
+        });
+        onClose();
+      } else {
+        setError("Bypass guest handler is not available.");
+      }
+    } catch (err: any) {
+      setError(`Guest Login Failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -33,8 +81,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
       onClose();
     } catch (err: any) {
       console.error("Full Error Object:", err);
-      setError(`Login failed: ${err.message}`);
-      alert(`🔴 LOGIN FAILED!\nError Code: ${err.code}\nMessage: ${err.message}`);
+      setError(`Login failed: ${err.message}. Tip: Try 'Instant Guest Rider' inside previews.`);
     } finally {
       setLoading(false);
     }
@@ -53,14 +100,14 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
       }
       onClose();
     } catch (err: any) {
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setError("Invalid email or password.");
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError("Invalid email or password. If you don't have an account, click 'Signup Now' below.");
       } else if (err.code === 'auth/email-already-in-use') {
         setError("Email already in use.");
       } else if (err.code === 'auth/weak-password') {
         setError("Password should be at least 6 characters.");
       } else {
-        setError("Auth failed. Check console.");
+        setError(`Auth failed: ${err.message || "Check console."}`);
         console.error(err);
       }
     } finally {
@@ -185,7 +232,22 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 </button>
               </form>
 
-              <div className="relative my-8">
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800"></div></div>
+                <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#1A1A1A] px-4 text-zinc-500 font-black tracking-[0.2em]">OR FAST ACCESS</span></div>
+              </div>
+
+              <button 
+                onClick={handleDemoOrGuestLogin}
+                disabled={loading}
+                className="w-full py-4 bg-gradient-to-r from-red-600 to-orange-500 text-white font-black uppercase italic rounded-2xl hover:brightness-110 transition-all shadow-[0_10px_30px_rgba(239,68,68,0.25)] flex items-center justify-center gap-3 h-14 md:h-16 border border-red-500/20"
+                id="guest-login-btn"
+              >
+                <span className="text-xl animate-bounce">🏍️</span>
+                <span>Instant Guest Rider (One-Click)</span>
+              </button>
+
+              <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800"></div></div>
                 <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#1A1A1A] px-4 text-zinc-500 font-black tracking-[0.2em]">OR FUEL WITH</span></div>
               </div>
