@@ -2120,8 +2120,8 @@ export default function App() {
             <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
               <defs>
                 <linearGradient id="chartGradient" x1="0" y1="1" x2="0" y2="0">
-                  <stop offset="0%" stopColor="#FFD700" stopOpacity="0" />
-                  <stop offset="100%" stopColor="#FFD700" stopOpacity="0.4" />
+                  <stop offset="0%" stopColor={isCrashed ? "#EF4444" : "#FFD700"} stopOpacity="0" />
+                  <stop offset="100%" stopColor={isCrashed ? "#EF4444" : "#FFD700"} stopOpacity="0.4" />
                 </linearGradient>
                 <filter id="glow">
                   <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
@@ -2144,10 +2144,10 @@ export default function App() {
                     fill="url(#chartGradient)"
                     stroke="none"
                     initial={{ opacity: 0 }}
-                    animate={{ opacity: isCrashed ? 0.1 : 1 }}
+                    animate={{ opacity: isCrashed ? 0.3 : 1 }}
                   />
                   
-                  {/* The main golden line */}
+                  {/* The main golden/red line */}
                   <motion.path
                     d={`M 0 100 L ${multiplierPoints.map((p) => {
                       const xBase = (p.x / Math.max(6, multiplierPoints[multiplierPoints.length-1].x)) * 100;
@@ -2155,8 +2155,8 @@ export default function App() {
                       return `${xBase} ${yBase}`;
                     }).join(' L ')}`}
                     fill="none"
-                    stroke={isCrashed ? "#444" : "#FFD700"}
-                    strokeWidth="2"
+                    stroke={isCrashed ? "#EF4444" : "#FFD700"}
+                    strokeWidth="3"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
@@ -2193,7 +2193,7 @@ export default function App() {
                    >
                     <Bike className="w-12 h-12 text-[#FFD700] drop-shadow-[0_0_20px_rgba(255,215,0,0.8)]" />
                    </motion.div>
-
+ 
                    {/* Exhaust Flames/Smoke */}
                    <div className="absolute -left-4 top-1/2 -translate-y-1/2 flex gap-1">
                       {[...Array(3)].map((_, i) => (
@@ -2217,49 +2217,49 @@ export default function App() {
               </motion.div>
             )}
           </div>
-
+ 
           <motion.div 
-            className="text-center z-10 select-none bg-black/40 p-12 rounded-full backdrop-blur-md border border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.5)]"
+            className="text-center z-10 select-none bg-black/20 p-6 md:p-8 rounded-2xl backdrop-blur-sm border border-white/5 shadow-[0_0_60px_rgba(0,0,0,0.6)]"
             animate={multiplier > 5 && isPlaying ? {
                 scale: [1, 1.02, 1],
                 rotate: [0, 0.5, -0.5, 0]
             } : {}}
             transition={{ repeat: Infinity, duration: 0.1 }}
           >
-            <p className="text-xs uppercase tracking-[0.6em] text-[#FFD700]/60 mb-2 font-black flex items-center justify-center gap-2">
-              <Gauge className="w-4 h-4 animate-pulse" /> CURRENT THUMP
+            <p className="text-[10px] uppercase tracking-[0.4em] text-[#FFD700]/60 mb-1 font-black flex items-center justify-center gap-1.5">
+              <Gauge className="w-3.5 h-3.5 animate-pulse" /> CURRENT THUMP
             </p>
-            <div className={`text-9xl md:text-[14rem] font-black leading-none italic tracking-tighter transition-colors duration-300 tabular-nums ${isCrashed ? 'text-red-600' : (isPlaying && hasCashedOut) ? 'text-green-500' : isPlaying ? 'text-white' : 'text-zinc-800'}`}>
-              {multiplier.toFixed(2)}<span className="text-5xl align-top ml-1 text-[#FFD700]">x</span>
+            <div className={`text-6xl md:text-8xl font-black leading-none italic tracking-tighter transition-all duration-300 tabular-nums ${isCrashed ? 'text-red-500' : (isPlaying && hasCashedOut) ? 'text-green-500' : isPlaying ? 'text-white' : 'text-zinc-500'}`}>
+              {multiplier.toFixed(2)}<span className="text-2xl md:text-3xl align-top ml-0.5 text-[#FFD700]">x</span>
             </div>
-            <div className={`mt-6 inline-block px-10 py-3 border-2 transition-all duration-300 ${
-              isCrashed ? 'border-red-600 text-red-600 bg-red-600/10' : hasCashedOut ? 'border-green-500 text-green-500 bg-green-500/10' : isPlaying ? 'border-[#FFD700] text-[#FFD700] bg-[#FFD700]/10' : 'border-zinc-800 text-zinc-800'
-            } text-2xl font-black uppercase tracking-widest skew-x-[-10deg]`}>
+            <div className={`mt-4 inline-block px-6 py-2 border transition-all duration-300 ${
+              isCrashed ? 'border-red-600 text-red-500 bg-red-600/10' : hasCashedOut ? 'border-green-500 text-green-500 bg-green-500/10' : isPlaying ? 'border-[#FFD700] text-[#FFD700] bg-[#FFD700]/10' : 'border-zinc-800 text-zinc-500'
+            } text-lg md:text-xl font-black uppercase tracking-widest skew-x-[-10deg]`}>
               {isCrashed ? 'CRASHED!' : hasCashedOut ? 'SUCCESSFUL EXIT' : isPlaying ? 'RIDING HARD' : (globalStatus === 'WAITING' ? 'READY IN GARAGE' : 'CONNECTING...')}
             </div>
             
             {globalStatus === 'WAITING' && (
-              <div className="mt-8 relative h-2 w-64 bg-zinc-800 rounded-full overflow-hidden mx-auto border border-white/5">
+              <div className="mt-6 relative h-1.5 w-48 bg-zinc-800 rounded-full overflow-hidden mx-auto border border-white/5">
                 <motion.div 
                    key={globalRoundIdRef.current}
                    initial={{ width: '100%' }}
                    animate={{ width: `${(globalCountdown / 8) * 100}%` }}
                    transition={{ duration: 1, ease: 'linear' }}
-                   className="h-full bg-[#FFD700] shadow-[0_0_10px_#FFD700]"
+                   className="h-full bg-[#FFD700] shadow-[0_0_8px_#FFD700]"
                 />
-                <div className="absolute inset-0 flex items-center justify-center text-[9px] font-black uppercase text-white mix-blend-difference tracking-tighter">
+                <div className="absolute inset-0 flex items-center justify-center text-[8px] font-black uppercase text-white mix-blend-difference tracking-tighter">
                   Next Thump in {globalCountdown}s
                 </div>
               </div>
             )}
             
-            <div className="mt-4 flex items-center justify-center gap-2">
-               <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-               <span className="text-[8px] font-black uppercase tracking-widest text-zinc-600 italic">Global Sync Active</span>
+            <div className="mt-3 flex items-center justify-center gap-1.5">
+               <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
+               <span className="text-[7px] font-black uppercase tracking-widest text-zinc-600 italic">Global Sync Active</span>
             </div>
             
             {error && (
-              <p className="text-red-500 font-bold mt-4 uppercase tracking-wider">{error}</p>
+              <p className="text-red-500 font-bold mt-3 uppercase tracking-wider text-xs">{error}</p>
             )}
           </motion.div>
 
