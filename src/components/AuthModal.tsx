@@ -25,6 +25,8 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDomainError, setIsDomainError] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleDemoOrGuestLogin = async () => {
     setLoading(true);
@@ -76,12 +78,18 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError(null);
+    setIsDomainError(false);
     try {
       await signInWithPopup(auth, googleProvider);
       onClose();
     } catch (err: any) {
       console.error("Full Error Object:", err);
-      setError(`Login failed: ${err.message}. Tip: Try 'Instant Guest Rider' inside previews.`);
+      if (err.code === 'auth/unauthorized-domain') {
+        setIsDomainError(true);
+        setError(`Domain Authorization Error: Under security guidelines, this dynamic preview URL is not authorized by your Firebase Project settings.`);
+      } else {
+        setError(`Login failed: ${err.message || err}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -155,7 +163,7 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
-              {error && (
+              {error && !isDomainError && (
                 <motion.div 
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
@@ -163,6 +171,55 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
                 >
                   <AlertCircle className="w-5 h-5 shrink-0" />
                   <p>{error}</p>
+                </motion.div>
+              )}
+
+              {isDomainError && (
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="mb-6 p-5 bg-amber-500/10 border-2 border-amber-500/30 rounded-2xl text-amber-200 text-xs leading-relaxed space-y-4"
+                >
+                  <div className="flex items-center gap-2 text-amber-400 font-bold uppercase tracking-wider">
+                    <AlertCircle className="w-5 h-5 text-amber-400 animate-pulse shrink-0" />
+                    <span>Firebase Auth: Domain Error ⚠️</span>
+                  </div>
+                  
+                  <p className="text-zinc-300">
+                    यह एरर इसलिए आ रहा है क्योंकि Firebase Google Sign-In आपके इस नए डोमेन को नहीं पहचानता है।
+                  </p>
+
+                  <div className="bg-black/50 p-3 rounded-xl border border-zinc-800 space-y-2">
+                    <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400">Your Domain URL</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <code className="bg-zinc-900 px-2 py-1.5 rounded text-white font-mono text-[11px] block select-all break-all flex-1">
+                        {window.location.hostname}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(window.location.hostname);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                        className="bg-[#FFD700] hover:bg-white text-black px-3 py-1.5 rounded-xl font-black uppercase text-[10px] transition-colors shrink-0"
+                      >
+                        {copied ? "Copied! ✅" : "Copy"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 text-zinc-400 text-[11px] list-none">
+                    <span className="font-bold text-zinc-350">इसे ठीक करने के 2 रास्ते (2 Solutions):</span>
+                    <div className="flex items-start gap-1">
+                      <span className="text-amber-500 font-bold">1.</span>
+                      <span>Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains में जाकर ऊपर वाले URL को जोड़ें।</span>
+                    </div>
+                    <div className="flex items-start gap-1">
+                      <span className="text-emerald-500 font-bold">2.</span>
+                      <span className="text-[#FFD700] font-black">बिना किसी झंझट के तुरंत खेलने के लिए नीचे दिए गए 'Instant Guest Rider' लाल बटन पर क्लिक करें!</span>
+                    </div>
+                  </div>
                 </motion.div>
               )}
 
