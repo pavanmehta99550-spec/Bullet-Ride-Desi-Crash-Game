@@ -102,6 +102,25 @@ export default function App() {
   useEffect(() => { hasCashedOutRef.current = hasCashedOut; }, [hasCashedOut]);
   useEffect(() => { activeCoinRef.current = activeCoin; }, [activeCoin]);
 
+  // Synchronize multiplier points for graph rendering across both normal and fallback modes
+  useEffect(() => {
+    if (globalStatus === 'IN_PROGRESS') {
+      const now = Date.now();
+      const sTime = startTimeRef.current || (now - (Math.log(multiplier || 1) / 0.06) * 1000);
+      const timeElapsed = Math.max(0, (now - sTime) / 1000);
+      
+      setMultiplierPoints(prev => {
+        const lastPoint = prev[prev.length - 1];
+        if (!lastPoint || (multiplier > lastPoint.y && timeElapsed - lastPoint.x > 0.03)) {
+          return [...prev, { x: timeElapsed, y: multiplier }].slice(-100);
+        }
+        return prev;
+      });
+    } else if (globalStatus === 'WAITING') {
+      setMultiplierPoints([{ x: 0, y: 1.00 }]);
+    }
+  }, [multiplier, globalStatus]);
+
   const fetchCoins = async () => {
     try {
       const data = await safeFetchJson('/api/config/crypto');
@@ -188,21 +207,43 @@ export default function App() {
       // Fallback: Start SMARTER local game loop if Firestore sync is blocked
       if (err.message.includes("permission") || err.message.includes("insufficient")) {
         console.warn("Starting SMOOTH local game loop fallback due to permission issues.");
-        const localStartTime = Date.now() + 5000;
+        let localStartTime = Date.now() + 5000;
+        let crashedAt: number | null = null;
+        
         const interval = setInterval(() => {
           const now = Date.now();
-          if (now < localStartTime) {
+          if (crashedAt) {
+            if (now >= crashedAt + 4000) {
+              crashedAt = null;
+              localStartTime = Date.now() + 5000;
+              setHasCashedOut(false);
+              setCashedOutMultiplier(null);
+              setMultiplierPoints([{ x: 0, y: 1 }]);
+            } else {
+              setGlobalStatus('CRASHED');
+              setIsCrashed(true);
+              setIsPlaying(false);
+            }
+          } else if (now < localStartTime) {
              setGlobalStatus('WAITING');
              setGlobalCountdown(Math.ceil((localStartTime - now)/1000));
              setMultiplier(1.00);
+             setIsPlaying(false);
+             setIsCrashed(false);
           } else {
              setGlobalStatus('IN_PROGRESS');
+             startTimeRef.current = localStartTime;
              const elapsed = (now - localStartTime) / 1000;
              const m = Math.pow(Math.E, 0.06 * elapsed);
              if (m > 10) { // Reset loop at 10x for fallback
                 setGlobalStatus('CRASHED');
-                // timeout for reset state handled by outside loop or re-trigger
+                setMultiplier(10.00);
+                setIsCrashed(true);
+                setIsPlaying(false);
+                crashedAt = now;
              } else {
+                setIsPlaying(true);
+                setIsCrashed(false);
                 setMultiplier(m);
              }
           }
@@ -473,7 +514,9 @@ export default function App() {
 
   useEffect(() => {
     if (isPlaying && !isCrashed) {
-      startTimeRef.current = 0; // Reset startTime so that the loop recalculates a fresh startTimeRef on the first frame
+      if (!startTimeRef.current) {
+        startTimeRef.current = Date.now();
+      }
       animationRef.current = requestAnimationFrame(updateMultiplier);
     }
     return () => {
