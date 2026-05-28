@@ -104,6 +104,11 @@ async function startServer() {
   let withdrawalRequests: any[] = [];
   let depositRequests: any[] = [];
   let userNotifications: any[] = [];
+  let promocodes: any[] = [
+    { code: "FREE500", reward: 500, uses: 0, maxUses: 1000, usedBy: [] },
+    { code: "RIDER100", reward: 100, uses: 0, maxUses: 1000, usedBy: [] },
+    { code: "START777", reward: 777, uses: 0, maxUses: 500, usedBy: [] }
+  ];
   // -----------------------------------------------------------------
 
   app.use(express.json());
@@ -115,9 +120,13 @@ async function startServer() {
 
   // Sync state from Firestore (Non-blocking)
   if (db) {
-    // Sync coins
+    // Sync coins and promocodes
     getDoc(doc(db, 'admin', 'settings')).then(snapshot => {
-      if (snapshot.exists() && snapshot.data()?.cryptoCoins) cryptoCoins = snapshot.data()?.cryptoCoins;
+      if (snapshot.exists()) {
+        const snapData = snapshot.data();
+        if (snapData?.cryptoCoins) cryptoCoins = snapData.cryptoCoins;
+        if (snapData?.promocodes && Array.isArray(snapData.promocodes)) promocodes = snapData.promocodes;
+      }
     }).catch(console.error);
 
     // Sync other lists
@@ -458,6 +467,128 @@ async function startServer() {
     const { userId, isBlocked } = req.body;
     if (db) await setDoc(doc(db, "users", userId), { isBlocked, updatedAt: serverTimestamp() }, { merge: true });
     res.json({ status: "ok", message: "User status updated!" });
+  });
+
+  // --- PROMO CODE ENDPOINTS ---
+  app.post("/api/user/redeem-promo", async (req, res) => {
+    try {
+      const { userId, code } = req.body;
+      if (!userId || !code) {
+        return res.status(400).json({ error: "User ID aur Promo Code batayein! ❌" });
+      }
+
+      const inputCode = code.trim().toUpperCase();
+
+      // Find code
+      const promoIdx = promocodes.findIndex(p => p.code.toUpperCase() === inputCode);
+      if (promoIdx === -1) {
+        return res.status(400).json({ error: "Ghalat promocode! Dobara check karein. ❌" });
+      }
+
+      const promo = promocodes[promoIdx];
+
+      // Check max uses
+      if (promo.maxUses && promo.uses >= promo.maxUses) {
+        return res.status(400).json({ error: "Yeh promocode expire ho chuka hai! Limit is reached. 📉" });
+      }
+
+      // Check if user already used
+      if (promo.usedBy && promo.usedBy.includes(userId)) {
+        return res.status(400).json({ error: "Aap pehle hi yeh promocode use kar chuke hain! 🛑" });
+      }
+
+      // Update user bonus balance in Database
+      let newBonusVal = promo.reward;
+      if (db) {
+        const userRef = doc(db, "users", userId);
+        const userSnap = await getDoc(userRef);
+        const currentBonus = userSnap.exists() ? (userSnap.data()?.bonus_balance || 0) : 0;
+        newBonusVal = currentBonus + promo.reward;
+        
+        await setDoc(userRef, { 
+          uid: userId, 
+          bonus_balance: newBonusVal,
+          updatedAt: serverTimestamp() 
+        }, { merge: true });
+      }
+
+      // Record use
+      if (!promo.usedBy) promo.usedBy = [];
+      promo.usedBy.push(userId);
+      promo.uses += 1;
+
+      // Save updated promo codes array to Firestore Settings
+      if (db) {
+        try {
+          await setDoc(doc(db, 'admin', 'settings'), { promocodes, updatedAt: serverTimestamp() }, { merge: true });
+        } catch (dbErr: any) {
+          console.error("[SERVER] Failed to save updated promocodes to Firestore Settings:", dbErr.message);
+        }
+      }
+
+      // Send a real-time notification
+      const notification = {
+        id: `promo_${Date.now()}_${userId}`,
+        type: 'signup_bonus',
+        coin: { name: "Promo Reward", symbol: "BONUS", color: "#FFD700" },
+        userId,
+        timestamp: new Date().toISOString(),
+        message: `Mubarak ho! Code "${inputCode}" successfully applied. ₹${promo.reward} Bonus points received! 🎁🚀`
+      };
+
+      if (db) {
+        try {
+          await setDoc(doc(db, 'notifications', notification.id), notification);
+        } catch (notifErr: any) {
+          console.error("Promo notification save failed:", notifErr.message);
+        }
+      }
+      userNotifications.push(notification);
+
+      return res.json({ 
+        status: "ok", 
+        message: `Mubarak ho! ₹${promo.reward} Bonus Points added to your profile! 🎉`,
+        newBonusBalance: newBonusVal
+      });
+
+    } catch (err: any) {
+      console.error("[SERVER] Redeem promo error:", err);
+      res.status(500).json({ error: "Internal Server Error: " + (err.message || String(err)) });
+    }
+  });
+
+  app.get("/api/admin/promocodes", (req, res) => {
+    res.json(promocodes);
+  });
+
+  app.post("/api/admin/set-promocodes", async (req, res) => {
+    try {
+      const { codes } = req.body;
+      if (codes && Array.isArray(codes)) {
+        // Normalize codes: ensure keys have code, reward, uses, maxUses, usedBy
+        promocodes = codes.map((c: any) => ({
+          code: String(c.code).trim().toUpperCase(),
+          reward: parseFloat(c.reward) || 0,
+          uses: parseInt(c.uses) || 0,
+          maxUses: c.maxUses ? parseInt(c.maxUses) : 1000,
+          usedBy: Array.isArray(c.usedBy) ? c.usedBy : []
+        }));
+
+        if (db) {
+          try {
+            await setDoc(doc(db, 'admin', 'settings'), { promocodes, updatedAt: serverTimestamp() }, { merge: true });
+          } catch (dbErr: any) {
+            console.error("[SERVER] Failed to save promo codes to Firestore settings:", dbErr.message);
+          }
+        }
+        res.json({ status: "ok", message: "Promo codes successfully saved! ✅" });
+      } else {
+        res.status(400).json({ error: "Invalid promo codes list format." });
+      }
+    } catch (err: any) {
+      console.error("set-promocodes failed:", err);
+      res.status(500).json({ error: err.message || "Internal Error" });
+    }
   });
 
   // --- GAME LOGIC (Synchronized Global Loop) ---

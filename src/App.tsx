@@ -65,12 +65,25 @@ export default function App() {
   const [historyTab, setHistoryTab] = useState<'global' | 'personal'>('global');
   const [betAmount, setBetAmount] = useState(500);
   
-  // Referral and Deposit Unlock states
+  // Referral, Promo Codes and Deposit Unlock states
   const [bonusBalance, setBonusBalance] = useState(0);
   const [hasDeposited, setHasDeposited] = useState(false);
   const [referralCode, setReferralCode] = useState('');
   const [referredBy, setReferredBy] = useState('');
   const [copied, setCopied] = useState(false);
+  
+  // Promo input
+  const [promoInput, setPromoInput] = useState('');
+  const [isRedeemingPromo, setIsRedeemingPromo] = useState(false);
+  const [promoMsg, setPromoMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Admin promocodes management state
+  const [adminPromocodes, setAdminPromocodes] = useState<any[]>([]);
+  const [isPromocodesLoading, setIsPromocodesLoading] = useState(false);
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoReward, setNewPromoReward] = useState('500');
+  const [newPromoMaxUses, setNewPromoMaxUses] = useState('1000');
+
   const [balance, setBalance] = useState(0);
   const [activeCoin, setActiveCoin] = useState<string>('INR');
   const [coinBalances, setCoinBalances] = useState<Record<string, number>>({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
@@ -212,23 +225,36 @@ export default function App() {
         setCashedOutMultiplier(null);
         setMultiplierPoints([{ x: 0, y: 1.00 }]);
         
-        // Place Queued Bet
-        if (isBetQueuedRef.current && userRef.current) {
-           const b = betAmountRef.current;
-           if (balanceRef.current >= b) {
-              setHasActiveBet(true);
-              updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
-              setWithdrawableBalance(prev => Math.max(0, prev - b));
-              setIsBetQueued(false);
-           }
-        } else if (isAutoPlayRef.current && userRef.current) {
-           const b = betAmountRef.current;
-           if (balanceRef.current >= b) {
-              setHasActiveBet(true);
-              updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
-              setWithdrawableBalance(prev => Math.max(0, prev - b));
-           }
+        // Place Queued Bet (only if not already placed manually during countdown)
+        if (!hasActiveBetRef.current) {
+          if (isBetQueuedRef.current && userRef.current) {
+             const b = betAmountRef.current;
+             if (balanceRef.current >= b) {
+                setHasActiveBet(true);
+                updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
+                setWithdrawableBalance(prev => Math.max(0, prev - b));
+                setIsBetQueued(false);
+             }
+          } else if (isAutoPlayRef.current && userRef.current) {
+             const b = betAmountRef.current;
+             if (balanceRef.current >= b) {
+                setHasActiveBet(true);
+                updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
+                setWithdrawableBalance(prev => Math.max(0, prev - b));
+             }
+          }
         }
+      }
+
+      // Pre-crash Auto Cash Out Safety Check (latency-proof)
+      if (data.status === 'CRASHED' && hasActiveBetRef.current && !hasCashedOutRef.current && userRef.current) {
+         if (isAutoExitRef.current) {
+            const targetVal = parseFloat(String(autoExitValueRef.current)) || 2.00;
+            if (targetVal > 1.00 && targetVal <= data.crashPoint) {
+               console.log(`[LATENCY PROOF AUTO-EXIT] Auto caching out player at ${targetVal}x, since crash was at ${data.crashPoint}x`);
+               cashOut(targetVal);
+            }
+         }
       }
 
       setGlobalStatus(data.status);
@@ -1296,15 +1322,94 @@ export default function App() {
     }
   };
 
+  const fetchAdminPromocodes = async () => {
+    setIsPromocodesLoading(true);
+    try {
+      const data = await safeFetchJson('/api/admin/promocodes');
+      if (Array.isArray(data)) {
+        setAdminPromocodes(data);
+      }
+    } catch (err: any) {
+      console.warn("Load promocodes failed:", err.message || err);
+    } finally {
+      setIsPromocodesLoading(false);
+    }
+  };
+
+  const saveAdminPromocodes = async (updatedCodes: any[]) => {
+    try {
+      const data = await safeFetchJson('/api/admin/set-promocodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codes: updatedCodes }),
+      });
+      showAdminStatus(data.message || "Promo codes saved! ✅");
+      setAdminPromocodes(updatedCodes);
+    } catch (err: any) {
+      console.error("Save promocodes failed:", err);
+      showAdminStatus("Failed to save promo codes: " + (err.message || String(err)), 'error');
+    }
+  };
+
+  const redeemPromoCode = async () => {
+    if (!user) {
+      setPromoMsg({ text: "Pehle sign-in karein! 🔑", type: 'error' });
+      return;
+    }
+    if (!promoInput.trim()) {
+      setPromoMsg({ text: "Promo code enter karein! 📝", type: 'error' });
+      return;
+    }
+
+    setIsRedeemingPromo(true);
+    setPromoMsg(null);
+    try {
+      const data = await safeFetchJson('/api/user/redeem-promo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.uid,
+          code: promoInput.trim()
+        })
+      });
+
+      if (data && data.status === 'ok') {
+        setPromoMsg({ text: data.message || "Success! 🎉", type: 'success' });
+        // Update local user bonus balance
+        if (data.newBonusBalance !== undefined) {
+          setBonusBalance(data.newBonusBalance);
+        }
+        setPromoInput('');
+        fetchUserNotifications();
+        if (db) {
+          const uSnap = await getDoc(doc(db, "users", user.uid));
+          if (uSnap.exists()) {
+            const uData = uSnap.data();
+            setBonusBalance(uData.bonus_balance || 0);
+          }
+        }
+      } else {
+        setPromoMsg({ text: data.error || "Ghalat coupon code! ❌", type: 'error' });
+      }
+    } catch (err: any) {
+      console.error("Redeem code action failed:", err);
+      setPromoMsg({ text: err.error || err.message || "Redemption and verification failed. ❌", type: 'error' });
+    } finally {
+      setIsRedeemingPromo(false);
+    }
+  };
+
   useEffect(() => {
     if (isAdminAuthenticated && showAdmin) {
       fetchAdminWithdrawals();
       fetchAdminDeposits();
       fetchAdminUsers();
+      fetchAdminPromocodes();
       const interval = setInterval(() => {
         fetchAdminWithdrawals();
         fetchAdminDeposits();
         fetchAdminUsers();
+        fetchAdminPromocodes();
       }, 3000);
       return () => clearInterval(interval);
     }
@@ -1574,6 +1679,144 @@ export default function App() {
                             Update PIN
                           </button>
                        </div>
+                    </div>
+                  </div>
+
+                  {/* Promo Codes Management */}
+                  <div className="mt-8 pt-6 border-t border-zinc-800 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <h4 className="text-[#FFD700] font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                          <span>🎁 Promo Codes Management</span>
+                        </h4>
+                        <span className="text-[9px] uppercase font-bold text-zinc-500">Add & Save promo codes</span>
+                      </div>
+                      
+                      <div className="bg-black/40 border border-zinc-805 p-4 rounded-xl space-y-4">
+                        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Create New Promo Code</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[8px] text-zinc-500 font-bold uppercase font-sans">Code Name</label>
+                            <input 
+                              type="text" 
+                              placeholder="e.g. BAZI300"
+                              value={newPromoCode}
+                              onChange={(e) => setNewPromoCode(e.target.value.toUpperCase())}
+                              className="w-full bg-black/60 border border-zinc-800 p-2 text-xs rounded outline-none text-[#FFD700] uppercase font-mono"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] text-zinc-500 font-bold uppercase font-sans">Reward (pts)</label>
+                            <input 
+                              type="number" 
+                              placeholder="e.g. 300"
+                              value={newPromoReward}
+                              onChange={(e) => setNewPromoReward(e.target.value)}
+                              className="w-full bg-black/60 border border-zinc-800 p-2 text-xs rounded outline-none text-white font-mono"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] text-zinc-500 font-bold uppercase font-sans">Max Uses</label>
+                            <input 
+                              type="number" 
+                              placeholder="e.g. 1000"
+                              value={newPromoMaxUses}
+                              onChange={(e) => setNewPromoMaxUses(e.target.value)}
+                              className="w-full bg-black/60 border border-zinc-800 p-2 text-xs rounded outline-none text-white font-mono"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (!newPromoCode.trim()) {
+                              showAdminStatus("Promo code name khali nahi ho sakta! ❌", 'error');
+                              return;
+                            }
+                            const rewardNum = parseFloat(newPromoReward);
+                            const maxUsesNum = parseInt(newPromoMaxUses);
+                            if (isNaN(rewardNum) || rewardNum <= 0) {
+                              showAdminStatus("Sahi reward points enter karein! ❌", 'error');
+                              return;
+                            }
+                            const codeUpper = newPromoCode.trim().toUpperCase();
+                            if (adminPromocodes.some(p => p.code.toUpperCase() === codeUpper)) {
+                              showAdminStatus("Yeh promo code pehle se maujood hai! 😡", 'error');
+                              return;
+                            }
+                            const updated = [
+                              ...adminPromocodes,
+                              { 
+                                code: codeUpper, 
+                                reward: rewardNum, 
+                                uses: 0, 
+                                maxUses: isNaN(maxUsesNum) ? 1000 : maxUsesNum, 
+                                usedBy: [] 
+                              }
+                            ];
+                            saveAdminPromocodes(updated);
+                            setNewPromoCode('');
+                          }}
+                          className="w-full py-2.5 bg-[#FFD700] text-black font-black uppercase text-[10px] skew-x-[-10deg] tracking-widest hover:bg-white duration-200"
+                        >
+                          ADD NEW PROMO CODE ➕
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="text-zinc-400 font-bold text-xs uppercase tracking-widest">Active Promo Codes List</h4>
+                      <div className="bg-black/40 border border-zinc-800 rounded-xl overflow-hidden">
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          {isPromocodesLoading ? (
+                            <div className="p-4 text-center">
+                              <RefreshCw className="w-5 h-5 text-[#FFD700] animate-spin mx-auto mb-1" />
+                              <p className="text-[9px] text-zinc-400 uppercase">Loading promo codes...</p>
+                            </div>
+                          ) : (
+                            <table className="w-full text-left text-[10px]">
+                              <thead className="bg-[#151515] text-zinc-400 uppercase text-[9px] tracking-wider font-bold">
+                                <tr>
+                                  <th className="p-2.5">Code</th>
+                                  <th className="p-2.5">Reward</th>
+                                  <th className="p-2.5">Uses Count</th>
+                                  <th className="p-2.5 text-right font-black">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-850">
+                                {adminPromocodes.map((promo, idx) => (
+                                  <tr key={promo.code} className="hover:bg-white/5 transition-colors">
+                                    <td className="p-2.5">
+                                      <p className="text-[#FFD700] font-mono font-bold uppercase">{promo.code}</p>
+                                    </td>
+                                    <td className="p-2.5 font-mono text-white">
+                                      {promo.reward} pts
+                                    </td>
+                                    <td className="p-2.5 font-mono text-zinc-400">
+                                      {promo.uses} / {promo.maxUses || '∞'}
+                                    </td>
+                                    <td className="p-2.5 text-right whitespace-nowrap">
+                                      <button 
+                                        onClick={() => {
+                                          const filtered = adminPromocodes.filter((_, i) => i !== idx);
+                                          saveAdminPromocodes(filtered);
+                                        }}
+                                        className="bg-red-900/40 text-red-400 border border-red-900/40 hover:bg-red-600 hover:text-white px-2 py-0.5 rounded text-[8px] font-black uppercase italic"
+                                      >
+                                        Delete
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {adminPromocodes.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="p-6 text-center text-zinc-650 italic">No active promo codes.</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -2088,6 +2331,43 @@ export default function App() {
                       <p className="text-[8px] text-amber-500/80 mt-1 leading-normal">First approved deposit unlocks withdrawals.</p>
                     )}
                   </div>
+                </div>
+
+                {/* Promo Code Redemption Section */}
+                <div className="bg-[#121212]/90 border border-[#FFD700]/20 p-5 rounded-2xl space-y-3 shadow-inner">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-xs font-black uppercase italic text-[#FFD700] tracking-widest flex items-center gap-1.5 animate-pulse">
+                      <Gift className="w-4 h-4 text-[#FFD700]" />
+                      Got a Promo Code? (Bole toh Coupon!)
+                    </h4>
+                  </div>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Enter promo code (e.g. FREE500)" 
+                      value={promoInput} 
+                      onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                      className="flex-1 bg-black/60 border border-zinc-850 text-[#FFD700] placeholder-zinc-600 font-mono text-xs rounded-xl px-3.5 py-3 outline-none tracking-widest focus:border-[#FFD700]/60 transition-colors uppercase font-bold"
+                    />
+                    <button 
+                      onClick={redeemPromoCode}
+                      disabled={isRedeemingPromo || !promoInput.trim()}
+                      className="px-5 py-3 bg-gradient-to-r from-[#FFD700] to-yellow-500 hover:from-yellow-500 hover:to-[#FFD700] text-black font-black uppercase italic text-xs rounded-xl transition-all flex items-center gap-1.5 shrink-0 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none hover:shadow-[0_0_15px_rgba(255,215,0,0.3)] duration-200"
+                    >
+                      {isRedeemingPromo ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-black" />
+                      ) : "Redeem"}
+                    </button>
+                  </div>
+                  {promoMsg && (
+                    <motion.p 
+                      initial={{ opacity: 0, y: -5 }} 
+                      animate={{ opacity: 1, y: 0 }} 
+                      className={`text-[10px] font-bold uppercase tracking-wider ${promoMsg.type === 'error' ? 'text-red-500' : 'text-green-400'}`}
+                    >
+                      {promoMsg.text}
+                    </motion.p>
+                  )}
                 </div>
 
                 {/* Referral Link & Dashboard Widget */}
@@ -3073,23 +3353,45 @@ export default function App() {
                   }
                 }
               } else {
-                // Countdown / Crashed state, toggle queue
-                if (isBetQueued) {
-                  setIsBetQueued(false);
-                } else {
-                  if (coinBalances[activeCoin] < betAmount) {
-                    setError("Bas kar bhai! Balance low hai.");
-                    setTimeout(() => setError(null), 3000);
-                    return;
+                // Countdown (WAITING) or CRASHED state
+                if (globalStatus === 'WAITING') {
+                  if (hasActiveBet) {
+                    // Cancel current active bet & refund immediately
+                    const b = betAmount;
+                    setHasActiveBet(false);
+                    updateUserBalance(user.uid, coinBalances[activeCoin] + b, activeCoin);
+                    setWithdrawableBalance(prev => prev + b);
+                  } else {
+                    // Place direct active bet right now
+                    const b = betAmount;
+                    if (coinBalances[activeCoin] < b) {
+                      setError("Bas kar bhai! Balance low hai.");
+                      setTimeout(() => setError(null), 3000);
+                      return;
+                    }
+                    setHasActiveBet(true);
+                    updateUserBalance(user.uid, coinBalances[activeCoin] - b, activeCoin);
+                    setWithdrawableBalance(prev => Math.max(0, prev - b));
                   }
-                  setIsBetQueued(true);
+                } else {
+                  // CRASHED state, toggle next-round queue
+                  if (isBetQueued) {
+                    setIsBetQueued(false);
+                  } else {
+                    if (coinBalances[activeCoin] < betAmount) {
+                      setError("Bas kar bhai! Balance low hai.");
+                      setTimeout(() => setError(null), 3000);
+                      return;
+                    }
+                    setIsBetQueued(true);
+                  }
                 }
               }
             }}
             disabled={(isPlaying && hasActiveBet && hasCashedOut) || loading}
             className={`mt-auto w-full py-8 transition-all shadow-xl active:translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed group overflow-hidden relative ${
-              isPlaying && hasActiveBet && !hasCashedOut 
-                ? 'bg-red-600 hover:bg-red-500' 
+              (isPlaying && hasActiveBet && !hasCashedOut) || (globalStatus === 'WAITING' && hasActiveBet)
+                ? 'bg-red-600 hover:bg-red-500 text-white' 
                 : isBetQueued 
                   ? 'bg-amber-600 hover:bg-amber-500 text-white animate-pulse' 
                   : 'bg-[#FFD700] hover:bg-white text-black'
@@ -3097,17 +3399,19 @@ export default function App() {
           >
             <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-0 transition-transform duration-500 ease-out" />
             <span className={`relative text-3xl font-black uppercase tracking-tighter ${
-              isPlaying && hasActiveBet && !hasCashedOut ? 'text-white' : (isBetQueued ? 'text-white' : 'text-black')
+              (isPlaying && hasActiveBet && !hasCashedOut) || (globalStatus === 'WAITING' && hasActiveBet) || isBetQueued ? 'text-white' : 'text-black'
             }`}>
               {isPlaying && hasActiveBet && !hasCashedOut 
                 ? `CASH OUT` 
-                : (isPlaying && hasActiveBet && hasCashedOut) 
-                  ? 'CASHED OUT' 
-                  : isBetQueued 
-                    ? `CANCEL BET` 
-                    : isPlaying 
-                      ? `BET FOR NEXT RIDE` 
-                      : `BET ${betAmount} ${activeCoin}`}
+                : (globalStatus === 'WAITING' && hasActiveBet)
+                  ? `CANCEL BET`
+                  : (isPlaying && hasActiveBet && hasCashedOut) 
+                    ? 'CASHED OUT' 
+                    : isBetQueued 
+                      ? `CANCEL BET` 
+                      : isPlaying 
+                        ? `BET FOR NEXT RIDE` 
+                        : `BET ${betAmount} ${activeCoin}`}
             </span>
           </button>
           
