@@ -18,6 +18,7 @@ import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, se
 import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
 import { SearchableCoinDropdown } from './components/SearchableCoinDropdown';
+import { cryptoConfig } from './lib/cryptoConfig';
 import { audioManager } from './lib/audio';
 
 interface GameHistory {
@@ -2802,17 +2803,21 @@ export default function App() {
                         <div className="w-full space-y-4">
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                              <label className="text-[10px] font-bold uppercase text-zinc-500">Deposit Amount (₹)</label>
+                              <label className="text-[10px] font-bold uppercase text-zinc-500">Deposit Amount ({freshCoin.symbol})</label>
                               <input 
                                 type="number"
                                 value={depositAmountInput}
                                 onChange={(e) => setDepositAmountInput(e.target.value)}
-                                className="w-full bg-black border border-zinc-800 p-3 text-white rounded outline-none focus:border-[#FFD700]"
+                                className={`w-full bg-black border ${cryptoConfig[freshCoin.symbol] && parseFloat(depositAmountInput) < cryptoConfig[freshCoin.symbol].min ? 'border-red-500' : 'border-zinc-800'} p-3 text-white rounded outline-none focus:border-[#FFD700]`}
                                 placeholder="Amount"
-                                min={cryptoLimits[activeCoin]?.min || 0}
-                                max={cryptoLimits[activeCoin]?.max || 999999}
+                                min={cryptoConfig[freshCoin.symbol]?.min || 0}
                                 step="any"
                               />
+                              {cryptoConfig[freshCoin.symbol] && (
+                                <p className="text-[9px] text-zinc-500 font-bold uppercase">
+                                  Min Deposit: {cryptoConfig[freshCoin.symbol].min} {freshCoin.symbol} (Conf: {cryptoConfig[freshCoin.symbol].conf})
+                                </p>
+                              )}
                             </div>
                             <div className="space-y-2">
                               <label className="text-[10px] font-bold uppercase text-zinc-500">Transaction ID / TXID</label>

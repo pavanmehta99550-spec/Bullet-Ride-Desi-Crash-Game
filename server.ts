@@ -19,6 +19,7 @@ import {
   deleteField,
   runTransaction
 } from "firebase/firestore";
+import { cryptoConfig } from "./src/lib/cryptoConfig";
 import fs from "fs";
 
 async function startServer() {
@@ -249,6 +250,15 @@ async function startServer() {
   // --- DEPOSIT & WITHDRAWAL ROUTES ---
   app.post("/api/deposit/request", async (req, res) => {
     const { amount, coin, transactionId, userId } = req.body;
+    
+    // Server-side validation
+    const coinSymbol = coin?.symbol || coin;
+    const config = cryptoConfig[coinSymbol];
+    
+    if (config && parseFloat(amount) < config.min) {
+      return res.status(400).json({ error: `Minimum deposit for ${coinSymbol} is ${config.min}` });
+    }
+
     const request = { id: Date.now(), amount: parseFloat(amount), coin, transactionId, userId, status: 'pending', timestamp: new Date().toISOString() };
     depositRequests.push(request);
     if (db) await setDoc(doc(db, 'deposits', request.id.toString()), request);
