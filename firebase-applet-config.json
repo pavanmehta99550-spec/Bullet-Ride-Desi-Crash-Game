@@ -1,10 +1,10 @@
 {
-  "projectId": "eng-scholar-j07pf",
-  "appId": "1:233719692690:web:004c072eda8132178fd54b",
-  "apiKey": "AIzaSyAHocKjNGOjhUPJai7ROdQ8bzquO537tQA",
-  "authDomain": "eng-scholar-j07pf.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-d9c66130-58ba-4b73-97e5-8abb490c2227",
-  "storageBucket": "eng-scholar-j07pf.firebasestorage.app",
-  "messagingSenderId": "233719692690",
-  "measurementId": ""
+  "projectId": "clipnova-f259d",
+  "appId": "1:1021594403404:web:0d5d5f342378855947aae9",
+  "apiKey": "AIzaSyAAylk4kI5has8jdwX0ef29vcRkLPoSoNw",
+  "authDomain": "clipnova-f259d.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "clipnova-f259d.firebasestorage.app",
+  "messagingSenderId": "1021594403404",
+  "measurementId": "G-5EFZFGXW7K"
 }

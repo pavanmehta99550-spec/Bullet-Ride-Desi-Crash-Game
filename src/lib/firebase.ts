@@ -30,13 +30,14 @@ const getCustomLocalConfig = () => {
 const localConfig = getCustomLocalConfig();
 
 // Define fallback defaults for the primary project so the app NEVER crashes
-const DEFAULT_API_KEY = "AIzaSyAHocKjNGOjhUPJai7ROdQ8bzquO537tQA";
-const DEFAULT_AUTH_DOMAIN = "eng-scholar-j07pf.firebaseapp.com";
-const DEFAULT_PROJECT_ID = "eng-scholar-j07pf";
-const DEFAULT_STORAGE_BUCKET = "eng-scholar-j07pf.firebasestorage.app";
-const DEFAULT_MESSAGING_SENDER_ID = "233719692690";
-const DEFAULT_APP_ID = "1:233719692690:web:004c072eda8132178fd54b";
-const DEFAULT_FIRESTORE_DATABASE_ID = "ai-studio-d9c66130-58ba-4b73-97e5-8abb490c2227";
+const DEFAULT_API_KEY = "AIzaSyAAylk4kI5has8jdwX0ef29vcRkLPoSoNw";
+const DEFAULT_AUTH_DOMAIN = "clipnova-f259d.firebaseapp.com";
+const DEFAULT_PROJECT_ID = "clipnova-f259d";
+const DEFAULT_STORAGE_BUCKET = "clipnova-f259d.firebasestorage.app";
+const DEFAULT_MESSAGING_SENDER_ID = "1021594403404";
+const DEFAULT_APP_ID = "1:1021594403404:web:0d5d5f342378855947aae9";
+const DEFAULT_FIRESTORE_DATABASE_ID = "(default)";
+const DEFAULT_MEASUREMENT_ID = "G-5EFZFGXW7K";
 
 export const firebaseConfig = {
   // If the user supplied their custom config in env vars or local storage, use it.
@@ -44,23 +45,19 @@ export const firebaseConfig = {
   
   apiKey: localConfig?.apiKey || metaEnv.VITE_FIREBASE_API_KEY || DEFAULT_API_KEY,
   
-  authDomain: localConfig?.authDomain || metaEnv.VITE_FIREBASE_AUTH_DOMAIN || 
-    (isCustomDomain ? "clipnova-f259d.firebaseapp.com" : DEFAULT_AUTH_DOMAIN),
+  authDomain: localConfig?.authDomain || metaEnv.VITE_FIREBASE_AUTH_DOMAIN || DEFAULT_AUTH_DOMAIN,
     
-  projectId: localConfig?.projectId || metaEnv.VITE_FIREBASE_PROJECT_ID || 
-    (isCustomDomain ? "clipnova-f259d" : DEFAULT_PROJECT_ID),
+  projectId: localConfig?.projectId || metaEnv.VITE_FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID,
     
-  storageBucket: localConfig?.storageBucket || metaEnv.VITE_FIREBASE_STORAGE_BUCKET || 
-    (isCustomDomain ? "clipnova-f259d.firebasestorage.app" : DEFAULT_STORAGE_BUCKET),
+  storageBucket: localConfig?.storageBucket || metaEnv.VITE_FIREBASE_STORAGE_BUCKET || DEFAULT_STORAGE_BUCKET,
     
-  messagingSenderId: localConfig?.messagingSenderId || metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || 
-    (isCustomDomain ? "" : DEFAULT_MESSAGING_SENDER_ID),
+  messagingSenderId: localConfig?.messagingSenderId || metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || DEFAULT_MESSAGING_SENDER_ID,
     
-  appId: localConfig?.appId || metaEnv.VITE_FIREBASE_APP_ID || 
-    (isCustomDomain ? "" : DEFAULT_APP_ID),
+  appId: localConfig?.appId || metaEnv.VITE_FIREBASE_APP_ID || DEFAULT_APP_ID,
     
-  firestoreDatabaseId: localConfig?.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || 
-    (isCustomDomain ? "" : DEFAULT_FIRESTORE_DATABASE_ID)
+  firestoreDatabaseId: localConfig?.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || DEFAULT_FIRESTORE_DATABASE_ID,
+  
+  measurementId: DEFAULT_MEASUREMENT_ID
 };
 
 // If isCustomDomain fallback values ended up with missing keys, patch using Defaults to absolutely prevent crashes
