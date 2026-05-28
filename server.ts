@@ -216,6 +216,14 @@ async function startServer() {
 
   // --- CONFIG ROUTES ---
   app.get("/api/config/crypto", (req, res) => res.json(cryptoCoins));
+  app.get("/api/config/crypto-limits", (req, res) => {
+    const limits = cryptoCoins.reduce((acc, coin) => {
+      acc[coin.symbol] = getLimits(coin.symbol);
+      return acc;
+    }, {} as Record<string, { min: number, max: number }>);
+    res.json(limits);
+  });
+
   app.post("/api/admin/set-crypto", async (req, res) => {
     try {
       const { coins } = req.body;

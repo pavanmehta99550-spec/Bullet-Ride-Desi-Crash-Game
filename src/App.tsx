@@ -90,6 +90,7 @@ export default function App() {
   const [promoInput, setPromoInput] = useState('');
   const [isRedeemingPromo, setIsRedeemingPromo] = useState(false);
   const [promoMsg, setPromoMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [cryptoLimits, setCryptoLimits] = useState<Record<string, { min: number, max: number }>>({});
 
   // Admin promocodes management state
   const [adminPromocodes, setAdminPromocodes] = useState<any[]>([]);
@@ -212,6 +213,17 @@ export default function App() {
     }
   };
 
+  const fetchCryptoLimits = async () => {
+    try {
+      const data = await safeFetchJson('/api/config/crypto-limits');
+      if (data) {
+        setCryptoLimits(data);
+      }
+    } catch (err) {
+      console.warn("Fetch crypto limits failed:", err);
+    }
+  };
+
   useEffect(() => {
     let isCurrent = true;
     let intervalId: any = null;
@@ -229,6 +241,7 @@ export default function App() {
     }
 
     fetchCoins();
+    fetchCryptoLimits();
 
     // Subscribe to Firestore settings for real-time crypto config/addresses sync
     const unsubCoins = onSnapshot(doc(db, 'admin', 'settings'), (snapshot) => {
@@ -2796,6 +2809,9 @@ export default function App() {
                                 onChange={(e) => setDepositAmountInput(e.target.value)}
                                 className="w-full bg-black border border-zinc-800 p-3 text-white rounded outline-none focus:border-[#FFD700]"
                                 placeholder="Amount"
+                                min={cryptoLimits[activeCoin]?.min || 0}
+                                max={cryptoLimits[activeCoin]?.max || 999999}
+                                step="any"
                               />
                             </div>
                             <div className="space-y-2">
@@ -2877,7 +2893,7 @@ export default function App() {
               {withdrawStep === 'coin' ? (
                 <div className="space-y-4">
                    <p className="text-[10px] uppercase font-bold text-zinc-500">Select Withdrawal Coin</p>
-                   <div className="grid grid-cols-1 gap-2">
+                   <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto custom-scrollbar">
                      {coins.filter(c => c.symbol !== 'BTC').map((coin) => (
                        <button 
                          key={coin.symbol}
@@ -2931,6 +2947,9 @@ export default function App() {
                         onChange={(e) => setWithdrawInput(e.target.value)}
                         className="w-full bg-black border-2 border-zinc-800 p-4 text-2xl font-mono text-white focus:border-[#FFD700] outline-none"
                         placeholder="0"
+                        min={selectedCoin ? (cryptoLimits[selectedCoin.symbol]?.min || 0) : 0}
+                        max={selectedCoin ? (cryptoLimits[selectedCoin.symbol]?.max || 999999) : 999999}
+                        step="any"
                       />
                     </div>
 
