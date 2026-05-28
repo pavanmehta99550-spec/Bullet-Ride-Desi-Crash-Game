@@ -2043,7 +2043,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl flex justify-between items-center px-4">
-                   <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Admin Access Key (UID)</p>
+                   <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">User ID (UID)</p>
                    <p className="text-[9px] font-mono text-zinc-500 select-all">{user?.uid}</p>
                 </div>
 
