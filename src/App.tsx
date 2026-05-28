@@ -722,7 +722,14 @@ export default function App() {
   };
 
   const cashOut = (forcedMultiplier?: number) => {
-    if (hasCashedOutRef.current || isCrashedRef.current || !isPlayingRef.current || !hasActiveBetRef.current || globalStatus !== 'IN_PROGRESS') return;
+    // If it's an auto-exit (forcedMultiplier is set), we bypass standard in-flight guards since it might be a retroactive latency-proof settle.
+    if (forcedMultiplier !== undefined) {
+      if (hasCashedOutRef.current || !hasActiveBetRef.current) return;
+      // Extra security check: do not allow cashout above actual crash point
+      if (crashPointRef.current && forcedMultiplier > crashPointRef.current) return;
+    } else {
+      if (hasCashedOutRef.current || isCrashedRef.current || !isPlayingRef.current || !hasActiveBetRef.current || globalStatus !== 'IN_PROGRESS') return;
+    }
     
     // Calculate final win using current live multiplier or forced auto exit multiplier
     const currentMult = forcedMultiplier !== undefined ? forcedMultiplier : multiplierRef.current;
@@ -785,7 +792,7 @@ export default function App() {
 
     // Check Auto-Exit (multiplier matches or exceeds target autoExit threshold) before crash is triggered
     if (isAutoExitRef.current && hasActiveBetRef.current && !hasCashedOutRef.current) {
-      const targetVal = autoExitValueRef.current;
+      const targetVal = parseFloat(String(autoExitValueRef.current)) || 2.00;
       if (currentMultiplier >= targetVal && targetVal <= targetCrash) {
         cashOut(targetVal);
       }
@@ -1686,46 +1693,59 @@ export default function App() {
                   <div className="mt-8 pt-6 border-t border-zinc-800 grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
-                        <h4 className="text-[#FFD700] font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                          <span>🎁 Promo Codes Management</span>
+                        <h4 className="text-[#FFD700] font-bold text-sm uppercase tracking-widest flex items-center gap-2">
+                          <span>🎁 Promo Codes Maker (प्रमो कोड बनाएं)</span>
                         </h4>
-                        <span className="text-[9px] uppercase font-bold text-zinc-500">Add & Save promo codes</span>
+                        <span className="text-[9px] uppercase font-bold text-zinc-500">Live Management</span>
                       </div>
                       
-                      <div className="bg-black/40 border border-zinc-805 p-4 rounded-xl space-y-4">
-                        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Create New Promo Code</p>
-                        <div className="grid grid-cols-3 gap-2">
+                      <p className="text-[11px] text-zinc-400 leading-relaxed font-sans bg-[#FFD700]/5 border border-[#FFD700]/25 p-3 rounded-lg">
+                        ℹ️ <strong>यूं बनाएं कोड:</strong> आप खुद अपना मनपसंद कोड लिख सकते हैं (जैसे <code>MYRIDER77</code>)। यूज़र को कितना बोनस पॉइंट्स देना है वह खुद तय करें, तथा कितने यूज़र्स इस कोड को इस्तेमाल कर सकते हैं वह भी तय करें। जैसे ही लिमिट ख़त्म होगी, कोड अपने-आप अमान्य (Invalid) हो जाएगा।
+                      </p>
+
+                      <div className="bg-zinc-950 border border-zinc-800/80 p-5 rounded-xl space-y-4 shadow-xl">
+                        <div className="space-y-3">
                           <div className="space-y-1">
-                            <label className="text-[8px] text-zinc-500 font-bold uppercase font-sans">Code Name</label>
+                            <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                              Promo Code Name (कोडक का नाम - जो यूज़र डालेगा)
+                            </label>
                             <input 
                               type="text" 
-                              placeholder="e.g. BAZI300"
+                              placeholder="जैसे: FREE500, SUPER777..."
                               value={newPromoCode}
                               onChange={(e) => setNewPromoCode(e.target.value.toUpperCase())}
-                              className="w-full bg-black/60 border border-zinc-800 p-2 text-xs rounded outline-none text-[#FFD700] uppercase font-mono"
+                              className="w-full bg-black/80 border-2 border-zinc-800 p-3 text-sm rounded outline-none text-[#FFD700] uppercase font-mono font-bold focus:border-[#FFD700] transition-all"
                             />
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-[8px] text-zinc-500 font-bold uppercase font-sans">Reward (pts)</label>
-                            <input 
-                              type="number" 
-                              placeholder="e.g. 300"
-                              value={newPromoReward}
-                              onChange={(e) => setNewPromoReward(e.target.value)}
-                              className="w-full bg-black/60 border border-zinc-800 p-2 text-xs rounded outline-none text-white font-mono"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[8px] text-zinc-500 font-bold uppercase font-sans">Max Uses</label>
-                            <input 
-                              type="number" 
-                              placeholder="e.g. 1000"
-                              value={newPromoMaxUses}
-                              onChange={(e) => setNewPromoMaxUses(e.target.value)}
-                              className="w-full bg-black/60 border border-zinc-800 p-2 text-xs rounded outline-none text-white font-mono"
-                            />
+                          
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                                Bonus Weight (कितना बोनस पॉइंट देना है)
+                              </label>
+                              <input 
+                                type="number" 
+                                placeholder="जैसे: 500"
+                                value={newPromoReward}
+                                onChange={(e) => setNewPromoReward(e.target.value)}
+                                className="w-full bg-black/80 border-2 border-zinc-800 p-3 text-sm rounded outline-none text-white font-mono focus:border-emerald-500 transition-all"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                                Max Users Count (कितने यूज़र यूज़ कर पाएंगे)
+                              </label>
+                              <input 
+                                type="number" 
+                                placeholder="जैसे: 50, 100..."
+                                value={newPromoMaxUses}
+                                onChange={(e) => setNewPromoMaxUses(e.target.value)}
+                                className="w-full bg-black/80 border-2 border-zinc-800 p-3 text-sm rounded outline-none text-white font-mono focus:border-blue-500 transition-all"
+                              />
+                            </div>
                           </div>
                         </div>
+
                         <button
                           onClick={() => {
                             if (!newPromoCode.trim()) {
@@ -1755,61 +1775,90 @@ export default function App() {
                             ];
                             saveAdminPromocodes(updated);
                             setNewPromoCode('');
+                            setNewPromoReward('');
+                            setNewPromoMaxUses('');
                           }}
-                          className="w-full py-2.5 bg-[#FFD700] text-black font-black uppercase text-[10px] skew-x-[-10deg] tracking-widest hover:bg-white duration-200"
+                          className="w-full py-3 bg-[#FFD700] text-black font-black uppercase text-[11px] skew-x-[-10deg] tracking-widest hover:bg-white duration-200 shadow-[0_4px_15px_rgba(255,215,0,0.2)]"
                         >
-                          ADD NEW PROMO CODE ➕
+                          CREATE & SAVE PROMO CODE ➕
                         </button>
                       </div>
                     </div>
 
                     <div className="space-y-4">
-                      <h4 className="text-zinc-400 font-bold text-xs uppercase tracking-widest">Active Promo Codes List</h4>
-                      <div className="bg-black/40 border border-zinc-800 rounded-xl overflow-hidden">
-                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                      <div className="flex justify-between items-center">
+                        <h4 className="text-zinc-400 font-bold text-xs uppercase tracking-widest flex items-center gap-1">
+                          <span>📋 Active Promo Codes (चल रहे प्रमो कोड्स)</span>
+                        </h4>
+                        <span className="text-[9px] text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/20 px-2.5 py-0.5 rounded font-bold uppercase tracking-widest">
+                          {adminPromocodes.length} Total Codes
+                        </span>
+                      </div>
+
+                      <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+                        <div className="max-h-72 overflow-y-auto custom-scrollbar">
                           {isPromocodesLoading ? (
-                            <div className="p-4 text-center">
-                              <RefreshCw className="w-5 h-5 text-[#FFD700] animate-spin mx-auto mb-1" />
-                              <p className="text-[9px] text-zinc-400 uppercase">Loading promo codes...</p>
+                            <div className="p-8 text-center">
+                              <RefreshCw className="w-6 h-6 text-[#FFD700] animate-spin mx-auto mb-2" />
+                              <p className="text-[10px] text-zinc-400 uppercase font-mono">Loading dynamic codes...</p>
                             </div>
                           ) : (
-                            <table className="w-full text-left text-[10px]">
-                              <thead className="bg-[#151515] text-zinc-400 uppercase text-[9px] tracking-wider font-bold">
+                            <table className="w-full text-left text-[11px]">
+                              <thead className="bg-black text-zinc-400 uppercase text-[9px] tracking-wider font-bold">
                                 <tr>
-                                  <th className="p-2.5">Code</th>
-                                  <th className="p-2.5">Reward</th>
-                                  <th className="p-2.5">Uses Count</th>
-                                  <th className="p-2.5 text-right font-black">Action</th>
+                                  <th className="p-3 border-b border-zinc-800">Code</th>
+                                  <th className="p-3 border-b border-zinc-800">Reward Bonus</th>
+                                  <th className="p-3 border-b border-zinc-800">Uses / Max</th>
+                                  <th className="p-3 border-b border-zinc-800">Status</th>
+                                  <th className="p-3 text-right border-b border-zinc-800 font-black">Action</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-zinc-850">
-                                {adminPromocodes.map((promo, idx) => (
-                                  <tr key={promo.code} className="hover:bg-white/5 transition-colors">
-                                    <td className="p-2.5">
-                                      <p className="text-[#FFD700] font-mono font-bold uppercase">{promo.code}</p>
-                                    </td>
-                                    <td className="p-2.5 font-mono text-white">
-                                      {promo.reward} pts
-                                    </td>
-                                    <td className="p-2.5 font-mono text-zinc-400">
-                                      {promo.uses} / {promo.maxUses || '∞'}
-                                    </td>
-                                    <td className="p-2.5 text-right whitespace-nowrap">
-                                      <button 
-                                        onClick={() => {
-                                          const filtered = adminPromocodes.filter((_, i) => i !== idx);
-                                          saveAdminPromocodes(filtered);
-                                        }}
-                                        className="bg-red-900/40 text-red-400 border border-red-900/40 hover:bg-red-600 hover:text-white px-2 py-0.5 rounded text-[8px] font-black uppercase italic"
-                                      >
-                                        Delete
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
+                              <tbody className="divide-y divide-zinc-900">
+                                {adminPromocodes.map((promo, idx) => {
+                                  const isExpired = promo.uses >= (promo.maxUses || 1000);
+                                  return (
+                                    <tr key={promo.code} className="hover:bg-white/5 transition-colors">
+                                      <td className="p-3">
+                                        <p className="text-[#FFD700] font-mono font-black uppercase text-xs">{promo.code}</p>
+                                      </td>
+                                      <td className="p-3 font-mono text-emerald-400 font-bold">
+                                        ₹{promo.reward} Bonus
+                                      </td>
+                                      <td className="p-3 font-mono text-white font-semibold">
+                                        <span className="text-blue-400">{promo.uses}</span>
+                                        <span className="text-zinc-650"> / </span>
+                                        <span className="text-zinc-400">{promo.maxUses || '∞'}</span>
+                                      </td>
+                                      <td className="p-3">
+                                        {isExpired ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-red-950 text-red-400 border border-red-900/30">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                            EXPIRED
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-emerald-950 text-emerald-400 border border-emerald-900/30 animate-pulse">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            ACTIVE
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-right whitespace-nowrap">
+                                        <button 
+                                          onClick={() => {
+                                            const filtered = adminPromocodes.filter((_, i) => i !== idx);
+                                            saveAdminPromocodes(filtered);
+                                          }}
+                                          className="bg-red-900/20 text-red-400 border border-red-900/30 hover:bg-red-600 hover:text-white hover:border-red-600 px-2.5 py-1 rounded text-[9px] font-black uppercase italic duration-150"
+                                        >
+                                          Delete
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                                 {adminPromocodes.length === 0 && (
                                   <tr>
-                                    <td colSpan={4} className="p-6 text-center text-zinc-650 italic">No active promo codes.</td>
+                                    <td colSpan={5} className="p-10 text-center text-zinc-550 italic">No custom promo codes made yet. Create one on the left!</td>
                                   </tr>
                                 )}
                               </tbody>
@@ -2347,6 +2396,11 @@ export default function App() {
                       placeholder="Enter promo code (e.g. FREE500)" 
                       value={promoInput} 
                       onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          redeemPromoCode();
+                        }
+                      }}
                       className="flex-1 bg-black/60 border border-zinc-850 text-[#FFD700] placeholder-zinc-600 font-mono text-xs rounded-xl px-3.5 py-3 outline-none tracking-widest focus:border-[#FFD700]/60 transition-colors uppercase font-bold"
                     />
                     <button 
