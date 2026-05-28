@@ -60,6 +60,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<GameHistory[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [myGameHistory, setMyGameHistory] = useState<any[]>([]);
+  const [isMyHistoryLoading, setIsMyHistoryLoading] = useState(true);
+  const [historyTab, setHistoryTab] = useState<'global' | 'personal'>('global');
   const [betAmount, setBetAmount] = useState(500);
   
   // Referral and Deposit Unlock states
@@ -417,6 +420,7 @@ export default function App() {
         setUser(null);
         setBalance(0);
         setHistory([]); // Clear history on signout
+        setMyGameHistory([]); // Clear personal history on signout
         setActiveCoin('INR');
         setCoinBalances({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
         setWithdrawableBalance(0);
@@ -474,6 +478,85 @@ export default function App() {
         setReferredBy(data.referredBy || '');
       }
     });
+    return () => {
+      isCurrent = false;
+      unsub();
+    };
+  }, [user?.uid]);
+
+  // Real-time USER Game History Sync (Kitna bet lagaya, kitna hara, kitna jita)
+  useEffect(() => {
+    let isCurrent = true;
+    if (!user) {
+      setMyGameHistory([]);
+      setIsMyHistoryLoading(false);
+      return;
+    }
+
+    // Attempt to load from local storage cache first for instant load
+    const historyKey = `game_history_list_${user.uid}`;
+    try {
+      const cached = localStorage.getItem(historyKey);
+      if (cached) {
+        setMyGameHistory(JSON.parse(cached));
+      }
+    } catch (_) {}
+
+    setIsMyHistoryLoading(true);
+
+    const q = query(
+      collection(db, 'users', user.uid, 'history'),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      if (!isCurrent) return;
+      
+      const dataList = snapshot.docs.map(doc => {
+        const data = doc.data();
+        let timeStr = 'Just now';
+        
+        let dateObj: Date;
+        if (data.createdAt) {
+          dateObj = new Date(data.createdAt);
+        } else if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+          dateObj = data.timestamp.toDate();
+        } else {
+          dateObj = new Date();
+        }
+
+        try {
+          timeStr = dateObj.toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit',
+            hour12: true 
+          });
+        } catch (e) {
+          timeStr = new Date().toLocaleTimeString();
+        }
+
+        return {
+          id: doc.id,
+          ...data,
+          time: timeStr
+        };
+      });
+
+      setMyGameHistory(dataList);
+      setIsMyHistoryLoading(false);
+
+      // Keep local storage warm
+      try {
+        localStorage.setItem(historyKey, JSON.stringify(dataList));
+      } catch (_) {}
+
+    }, (err) => {
+      console.warn("[FIREBASE] myGameHistory sync error, using cache:", err.message);
+      setIsMyHistoryLoading(false);
+    });
+
     return () => {
       isCurrent = false;
       unsub();
@@ -1279,28 +1362,16 @@ export default function App() {
 
   const saveCryptoAddresses = async () => {
     try {
-      // 1. Write directly to Firestore on the client-side for immediate real-time sync with all users
-      if (db) {
-        await setDoc(doc(db, 'admin', 'settings'), { 
-          cryptoCoins: coins, 
-          updatedAt: new Date().toISOString() 
-        }, { merge: true });
-        console.log("[FIREBASE] Saved cryptoCoins successfully from client direct-path.");
-      }
-
-      // 2. Perform backend API sync
+      // Perform backend API sync to save addresses securely
       const data = await safeFetchJson('/api/admin/set-crypto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ coins })
       });
       showAdminStatus(data.message || "Crypto addresses saved! ✅");
-      fetchCoins(); // Refresh
     } catch (err: any) {
-      // Graceful fallback: as long as Firestore direct-write succeeded, display success
-      showAdminStatus("Crypto addresses saved! ✅");
-      console.warn("API set-crypto warning/fallback:", err.message || err);
-      fetchCoins();
+      console.warn("API set-crypto failed:", err.message || err);
+      showAdminStatus("Failed to save crypto addresses: " + (err.message || String(err)), 'error');
     }
   };
 
@@ -2068,7 +2139,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl flex justify-between items-center px-4">
-                   <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">User ID (UID)</p>
+                   <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest font-sans">User ID (UID)</p>
                    <p className="text-[9px] font-mono text-zinc-500 select-all">{user?.uid}</p>
                 </div>
 
@@ -2076,33 +2147,39 @@ export default function App() {
                 <div className="space-y-3">
                   <h4 className="text-xs font-black uppercase italic text-[#FFD700] tracking-widest flex items-center gap-2">
                     <History className="w-4 h-4" />
-                    Recent Ride History
+                    My Personal Ride History (Apni Bazi)
                   </h4>
                   <div className="bg-black/40 border border-zinc-800 rounded-2xl overflow-hidden">
-                    {history.length > 0 ? (
-                      <div className="max-h-36 overflow-y-auto">
+                    {myGameHistory.length > 0 ? (
+                      <div className="max-h-56 overflow-y-auto pr-1">
                         <table className="w-full text-left text-xs">
-                          <thead className="bg-zinc-900 text-zinc-500 uppercase">
+                          <thead className="bg-[#1c1c1c] text-zinc-500 uppercase text-[9px] tracking-wider sticky top-0 z-10">
                             <tr>
                               <th className="p-3">Time</th>
-                              <th className="p-3 text-right">Result</th>
+                              <th className="p-3">Bet</th>
+                              <th className="p-3 text-center">Multiplier</th>
+                              <th className="p-3 text-right">Profit / Loss</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-zinc-800">
-                             {history.map((ride) => (
+                          <tbody className="divide-y divide-zinc-800/60 text-[11px]">
+                             {myGameHistory.map((ride) => (
                                <tr key={ride.id} className="hover:bg-white/5 transition-colors">
                                  <td className="p-3 font-mono text-zinc-400">{ride.time}</td>
-                                 <td className="p-3 font-black text-right italic" style={{ color: ride.multiplier >= 1.5 ? '#22c55e' : '#ef4444' }}>
-                                   {ride.multiplier.toFixed(2)}x
+                                 <td className="p-3 font-mono text-zinc-300 font-bold">₹{ride.betAmount}</td>
+                                 <td className="p-3 font-mono text-zinc-400 text-center">
+                                   {ride.multiplier ? `${Number(ride.multiplier).toFixed(2)}x` : '1.00x'}
+                                 </td>
+                                 <td className={`p-3 font-black font-mono text-right italic ${ride.status === 'win' ? 'text-green-400' : 'text-red-500'}`}>
+                                   {ride.status === 'win' ? `+₹${ride.winAmount}` : `-₹${ride.betAmount}`}
                                  </td>
                                </tr>
-                            ))}
+                             ))}
                           </tbody>
                         </table>
                       </div>
                     ) : (
                       <div className="p-6 text-center">
-                        <p className="text-zinc-600 text-xs italic">No rides yet. Start your engine!</p>
+                        <p className="text-zinc-600 text-xs italic">Aapne abhi tak koi bazi nahi lagayi hai. Abhi start karein! 🏁</p>
                       </div>
                     )}
                   </div>
@@ -2481,14 +2558,34 @@ export default function App() {
         
         {/* Left Side Panel: History */}
         <aside className="w-full md:w-72 border-r border-[#333] flex flex-col bg-[#141414] overflow-hidden shrink-0">
-          <div className="p-4 border-b border-[#333]">
-            <h2 className="text-[10px] uppercase tracking-[0.2em] text-[#666] font-bold flex items-center gap-2">
-              <History className="w-3 h-3" /> Recent Pit Stops
-            </h2>
+          {/* Real-time Tabs */}
+          <div className="flex border-b border-[#333] bg-[#111]">
+            <button 
+              onClick={() => setHistoryTab('global')}
+              className={`flex-1 py-3.5 text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1.5 border-b-2 ${
+                historyTab === 'global' 
+                  ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
+                  : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              Pit Stops
+            </button>
+            <button 
+              onClick={() => setHistoryTab('personal')}
+              className={`flex-1 py-3.5 text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1.5 border-b-2 ${
+                historyTab === 'personal' 
+                  ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
+                  : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              My Rides
+            </button>
           </div>
 
           <div 
-            className="flex-1 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800 p-4 h-[120px] md:h-full"
+            className="flex-1 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800 p-4 h-[150px] md:h-full"
             onTouchStart={(e) => {
               // Allow scrolling only within this container
               e.stopPropagation();
@@ -2498,28 +2595,88 @@ export default function App() {
             }}
           >
             <AnimatePresence initial={false} mode="popLayout">
-              {history.map((item) => (
-                <motion.div 
-                  key={item.id}
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  className={`flex justify-between items-center p-3 mb-2 bg-[#1A1A1A] border-l-4 rounded-r shadow-sm transition-colors hover:bg-[#222] ${
-                    item.multiplier > 2 ? 'border-green-500' : 'border-red-500'
-                  }`}
+              {historyTab === 'global' ? (
+                <motion.div
+                  key="global-history-list"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 10 }}
+                  transition={{ duration: 0.15 }}
                 >
-                  <span className="text-xs text-gray-500 font-mono">{item.time}</span>
-                  <span className={`text-lg font-black ${item.multiplier > 2 ? 'text-green-400' : 'text-red-400'}`}>
-                    {item.multiplier.toFixed(2)}x
-                  </span>
+                  {history.map((item) => (
+                    <motion.div 
+                      key={item.id}
+                      initial={{ x: -20, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      className={`flex justify-between items-center p-3 mb-2 bg-[#1A1A1A] border-l-4 rounded-r shadow-sm transition-colors hover:bg-[#222] ${
+                        item.multiplier > 2 ? 'border-green-500' : 'border-red-500'
+                      }`}
+                    >
+                      <span className="text-xs text-gray-400 font-mono">{item.time}</span>
+                      <span className={`text-lg font-black ${item.multiplier > 2 ? 'text-green-400' : 'text-red-400'}`}>
+                        {item.multiplier.toFixed(2)}x
+                      </span>
+                    </motion.div>
+                  ))}
+                  {history.length === 0 && !isHistoryLoading && (
+                    <div className="text-center py-8 text-zinc-600 italic text-sm">Waiting for the engine to start...</div>
+                  )}
+                  {isHistoryLoading && (
+                    <div className="flex justify-center py-8">
+                      <RefreshCw className="w-5 h-5 text-zinc-700 animate-spin" />
+                    </div>
+                  )}
                 </motion.div>
-              ))}
-              {history.length === 0 && !isHistoryLoading && (
-                <div className="text-center py-8 text-zinc-600 italic text-sm">Waiting for the engine to start...</div>
-              )}
-              {isHistoryLoading && (
-                <div className="flex justify-center py-8">
-                  <RefreshCw className="w-5 h-5 text-zinc-700 animate-spin" />
-                </div>
+              ) : (
+                <motion.div
+                  key="personal-history-list"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {myGameHistory.map((item) => (
+                    <motion.div 
+                      key={item.id}
+                      initial={{ x: -20, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      className={`flex flex-col p-3 mb-2.5 bg-[#1A1A1A] border-l-4 rounded-r shadow-md transition-colors hover:bg-[#222] ${
+                        item.status === 'win' ? 'border-green-500' : 'border-red-500'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[9px] text-zinc-500 font-mono font-semibold">{item.time}</span>
+                        <span className={`text-[9px] font-black uppercase italic tracking-wider ${item.status === 'win' ? 'text-green-400' : 'text-red-400'}`}>
+                          {item.status === 'win' ? 'WON' : 'LOST'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-zinc-400 text-[11px]">
+                          Bet: <strong className="text-zinc-200 font-semibold font-mono">₹{item.betAmount}</strong>
+                        </span>
+                        <span className={`text-xs font-black font-mono tracking-tight ${item.status === 'win' ? 'text-green-400' : 'text-zinc-400'}`}>
+                          {item.status === 'win' ? `+₹${item.winAmount}` : `-₹${item.betAmount}`}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between text-[9px] text-zinc-500 mt-1 pb-0.5 border-t border-zinc-800/40 pt-1">
+                        <span>Multiplier Exit</span>
+                        <span className="font-mono text-zinc-300 font-bold">{item.multiplier ? Number(item.multiplier).toFixed(2) : '1.00'}x</span>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {myGameHistory.length === 0 && !isMyHistoryLoading && (
+                    <div className="text-center py-8 text-zinc-500 italic text-xs">
+                      No rides completed yet! <br/>Place a bet to start.
+                    </div>
+                  )}
+                  {isMyHistoryLoading && (
+                    <div className="flex justify-center py-8">
+                      <RefreshCw className="w-5 h-5 text-zinc-700 animate-spin" />
+                    </div>
+                  )}
+                </motion.div>
               )}
             </AnimatePresence>
           </div>

@@ -163,12 +163,25 @@ async function startServer() {
   // --- CONFIG ROUTES ---
   app.get("/api/config/crypto", (req, res) => res.json(cryptoCoins));
   app.post("/api/admin/set-crypto", async (req, res) => {
-    const { coins } = req.body;
-    if (coins && Array.isArray(coins)) {
-      cryptoCoins = coins;
-      if (db) await setDoc(doc(db, 'admin', 'settings'), { cryptoCoins: coins, updatedAt: serverTimestamp() }, { merge: true });
-      res.json({ status: "ok", message: "Crypto addresses saved! ✅" });
-    } else res.status(400).json({ error: "Invalid coins data" });
+    try {
+      const { coins } = req.body;
+      if (coins && Array.isArray(coins)) {
+        cryptoCoins = coins;
+        if (db) {
+          try {
+            await setDoc(doc(db, 'admin', 'settings'), { cryptoCoins: coins, updatedAt: serverTimestamp() }, { merge: true });
+          } catch (dbErr: any) {
+            console.error("[SERVER] Failed to save cryptoCoins to Firestore, continuing with in-memory:", dbErr.message);
+          }
+        }
+        res.json({ status: "ok", message: "Crypto addresses saved! ✅" });
+      } else {
+        res.status(400).json({ error: "Invalid coins data" });
+      }
+    } catch (err: any) {
+      console.error("[SERVER] Error saving crypto:", err);
+      res.status(500).json({ error: "Internal Server Error: " + (err.message || String(err)) });
+    }
   });
 
   // --- DEPOSIT & WITHDRAWAL ROUTES ---
