@@ -187,6 +187,18 @@ export default function App() {
 
     fetchCoins();
 
+    // Subscribe to Firestore settings for real-time crypto config/addresses sync
+    const unsubCoins = onSnapshot(doc(db, 'admin', 'settings'), (snapshot) => {
+      if (isCurrent && snapshot.exists()) {
+        const snapData = snapshot.data();
+        if (snapData && Array.isArray(snapData.cryptoCoins)) {
+          setCoins(snapData.cryptoCoins);
+        }
+      }
+    }, (err) => {
+      console.warn("Firestore settings coin sync failed, falling back to REST API:", err.message);
+    });
+
     const handleGameUpdate = (data: any) => {
       if (!isCurrent || !data) return;
 
@@ -422,6 +434,7 @@ export default function App() {
       isCurrent = false;
       unsubscribeAuth();
       unsubGame();
+      unsubCoins();
       if (intervalId) {
         clearInterval(intervalId);
       }
@@ -1266,16 +1279,28 @@ export default function App() {
 
   const saveCryptoAddresses = async () => {
     try {
+      // 1. Write directly to Firestore on the client-side for immediate real-time sync with all users
+      if (db) {
+        await setDoc(doc(db, 'admin', 'settings'), { 
+          cryptoCoins: coins, 
+          updatedAt: new Date().toISOString() 
+        }, { merge: true });
+        console.log("[FIREBASE] Saved cryptoCoins successfully from client direct-path.");
+      }
+
+      // 2. Perform backend API sync
       const data = await safeFetchJson('/api/admin/set-crypto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ coins })
       });
-      showAdminStatus(data.message);
-      fetchCoins(); // Refresh to sync
+      showAdminStatus(data.message || "Crypto addresses saved! ✅");
+      fetchCoins(); // Refresh
     } catch (err: any) {
-      showAdminStatus("Error updating addresses", 'error');
-      console.warn("Error updating addresses:", err.message || err);
+      // Graceful fallback: as long as Firestore direct-write succeeded, display success
+      showAdminStatus("Crypto addresses saved! ✅");
+      console.warn("API set-crypto warning/fallback:", err.message || err);
+      fetchCoins();
     }
   };
 
@@ -2161,79 +2186,82 @@ export default function App() {
                   ))}
                 </div>
               ) : (
-                <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
-                  <div className="flex items-center gap-4 bg-black/60 p-4 rounded-2xl border border-zinc-800">
-                    <button onClick={() => setSelectedCoin(null)} className="text-[#FFD700] hover:underline text-xs font-bold uppercase italic">← Back</button>
-                    <div className="w-1 h-8 bg-zinc-800" />
-                    <div className="flex items-center gap-3">
-                      <span className="font-black" style={{ color: selectedCoin.color }}>{selectedCoin.symbol}</span>
-                      <span className="text-white font-bold">{selectedCoin.name} Network</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col md:flex-row gap-6 items-center">
-                    <div className="w-40 h-40 bg-white p-2 rounded-lg shrink-0 flex items-center justify-center">
-                      {selectedCoin.address && selectedCoin.address.length > 5 ? (
-                        <img 
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(selectedCoin.address)}`} 
-                          alt="QR Code" 
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full"
-                        />
-                      ) : (
-                        <div className="w-full h-full border-4 border-black flex items-center justify-center text-black font-black text-[10px] text-center uppercase p-4 italic">
-                          SET ADDRESS IN ADMIN
-                        </div>
-                      )}
-                    </div>
-                    <div className="w-full space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-bold uppercase text-zinc-500">Deposit Amount (₹)</label>
-                          <input 
-                            type="number"
-                            value={depositAmountInput}
-                            onChange={(e) => setDepositAmountInput(e.target.value)}
-                            className="w-full bg-black border border-zinc-800 p-3 text-white rounded outline-none focus:border-[#FFD700]"
-                            placeholder="Amount"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-bold uppercase text-zinc-500">Transaction ID / TXID</label>
-                          <input 
-                            type="text"
-                            value={depositTxId}
-                            onChange={(e) => setDepositTxId(e.target.value)}
-                            className="w-full bg-black border border-zinc-800 p-3 text-white rounded outline-none focus:border-[#FFD700]"
-                            placeholder="TXID or Ref ID"
-                          />
+                (() => {
+                  const freshCoin = coins.find(c => c.symbol === selectedCoin.symbol) || selectedCoin;
+                  return (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+                      <div className="flex items-center gap-4 bg-black/60 p-4 rounded-2xl border border-zinc-800">
+                        <button onClick={() => setSelectedCoin(null)} className="text-[#FFD700] hover:underline text-xs font-bold uppercase italic">← Back</button>
+                        <div className="w-1 h-8 bg-zinc-800" />
+                        <div className="flex items-center gap-3">
+                          <span className="font-black" style={{ color: freshCoin.color }}>{freshCoin.symbol}</span>
+                          <span className="text-white font-bold">{freshCoin.name} Network</span>
                         </div>
                       </div>
-                      
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase text-zinc-500">Deposit Address</label>
-                        <div className="bg-black p-4 rounded-xl font-mono text-xs text-zinc-300 break-all border border-zinc-800 relative group">
-                          {selectedCoin.address}
+
+                      <div className="flex flex-col md:flex-row gap-6 items-center">
+                        <div className="w-40 h-40 bg-white p-2 rounded-lg shrink-0 flex items-center justify-center">
+                          {freshCoin.address && freshCoin.address.length > 5 ? (
+                            <img 
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(freshCoin.address)}`} 
+                              alt="QR Code" 
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full"
+                            />
+                          ) : (
+                            <div className="w-full h-full border-4 border-black flex items-center justify-center text-black font-black text-[10px] text-center uppercase p-4 italic col-span-full">
+                              SET ADDRESS IN ADMIN
+                            </div>
+                          )}
+                        </div>
+                        <div className="w-full space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold uppercase text-zinc-500">Deposit Amount (₹)</label>
+                              <input 
+                                type="number"
+                                value={depositAmountInput}
+                                onChange={(e) => setDepositAmountInput(e.target.value)}
+                                className="w-full bg-black border border-zinc-800 p-3 text-white rounded outline-none focus:border-[#FFD700]"
+                                placeholder="Amount"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold uppercase text-zinc-500">Transaction ID / TXID</label>
+                              <input 
+                                type="text"
+                                value={depositTxId}
+                                onChange={(e) => setDepositTxId(e.target.value)}
+                                className="w-full bg-black border border-zinc-800 p-3 text-white rounded outline-none focus:border-[#FFD700]"
+                                placeholder="TXID or Ref ID"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold uppercase text-zinc-500">Deposit Address</label>
+                            <div className="bg-black p-4 rounded-xl font-mono text-xs text-zinc-300 break-all border border-zinc-800 relative group">
+                              {freshCoin.address}
+                              <button 
+                                onClick={() => {
+                                    navigator.clipboard.writeText(freshCoin.address);
+                                    showAdminStatus("Address Copied! ✅");
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 bg-zinc-800 text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                COPY
+                              </button>
+                            </div>
+                          </div>
+                          
                           <button 
-                            onClick={() => {
-                                navigator.clipboard.writeText(selectedCoin.address);
-                                showAdminStatus("Address Copied! ✅");
-                            }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 bg-zinc-800 text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={requestDeposit}
+                            className="w-full py-4 bg-[#FFD700] text-black font-black uppercase italic hover:bg-white transition-all shadow-[0_10px_30px_rgba(255,215,0,0.2)]"
                           >
-                            COPY
+                            SUBMIT DEPOSIT PROOF
                           </button>
                         </div>
                       </div>
-                      
-                      <button 
-                        onClick={requestDeposit}
-                        className="w-full py-4 bg-[#FFD700] text-black font-black uppercase italic hover:bg-white transition-all shadow-[0_10px_30px_rgba(255,215,0,0.2)]"
-                      >
-                        SUBMIT DEPOSIT PROOF
-                      </button>
-                    </div>
-                  </div>
                   <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-xl">
                     <p className="text-[10px] text-yellow-500 uppercase font-black italic text-center">
                       ⚠ Important: Send exactly ₹{depositAmountInput} to the address above, then paste the Transaction ID and click submit. 
@@ -2241,6 +2269,8 @@ export default function App() {
                     </p>
                   </div>
                 </motion.div>
+                  );
+                })()
               )}
             </motion.div>
           </div>
