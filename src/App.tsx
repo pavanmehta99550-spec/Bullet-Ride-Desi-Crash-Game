@@ -19,6 +19,7 @@ import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
 import { SearchableCoinDropdown } from './components/SearchableCoinDropdown';
 import { cryptoConfig } from './lib/cryptoConfig';
+import { formatBetAmount, calculateFiatValue } from './lib/conversion';
 import { audioManager } from './lib/audio';
 
 interface GameHistory {
@@ -106,6 +107,7 @@ export default function App() {
   const [activeCoin, setActiveCoin] = useState<string>('INR');
   const [coinBalances, setCoinBalances] = useState<Record<string, number>>({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 });
   const [withdrawableBalance, setWithdrawableBalance] = useState(0);
+  const [rates, setRates] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [isAutoPlay, setIsAutoPlay] = useState(() => {
     try {
@@ -225,6 +227,17 @@ export default function App() {
     }
   };
 
+  const fetchRates = async () => {
+    try {
+      const data = await safeFetchJson('/api/config/rates');
+      if (data) {
+        setRates(data);
+      }
+    } catch (err) {
+      console.warn("Fetch rates failed:", err);
+    }
+  };
+
   useEffect(() => {
     let isCurrent = true;
     let intervalId: any = null;
@@ -243,6 +256,7 @@ export default function App() {
 
     fetchCoins();
     fetchCryptoLimits();
+    fetchRates();
 
     // Subscribe to Firestore settings for real-time crypto config/addresses sync
     const unsubCoins = onSnapshot(doc(db, 'admin', 'settings'), (snapshot) => {
@@ -3467,7 +3481,6 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          {/* Path Visualizer (Abstract Road) */}
           <div className="absolute bottom-0 w-full h-32 overflow-hidden pointer-events-none opacity-50">
             <div className={`w-full h-1 bg-gradient-to-r from-transparent via-[#FFD700] to-transparent absolute bottom-12 transition-all duration-1000 ${isPlaying ? 'opacity-100 scale-x-110' : 'opacity-20 scale-x-100'}`}></div>
             <div className={`flex justify-center gap-24 mt-20 opacity-20 transition-transform duration-500 ${isPlaying ? 'translate-y-1' : ''}`}>
@@ -3482,18 +3495,21 @@ export default function App() {
         {/* Right Side Panel: Controls */}
         <aside className="w-full md:w-80 bg-[#1A1A1A] p-6 flex flex-col gap-6 border-l border-[#333]">
           <div className="space-y-4">
-            <div className="flex justify-between items-end">
+            <div className="flex justify-between items-end mb-2">
               <label className="text-[10px] uppercase font-bold text-[#888]">Riding Stake</label>
-              <span className="text-xs text-[#FFD700]">Min: ₹10</span>
+              <div className="text-[10px] font-mono text-zinc-400">
+                {activeCoin !== 'INR' && rates[activeCoin] ? `≈ ₹${calculateFiatValue(betAmount, activeCoin, rates)?.toFixed(2)}` : ''}
+              </div>
             </div>
             <div className="relative">
               <input 
                 type="number" 
-                value={betAmount} 
+                value={formatBetAmount(betAmount, activeCoin)} 
                 onChange={(e) => {
-                  if (isPlaying && hasActiveBet && !isCrashed) return;
-                  setBetAmount(parseInt(e.target.value) || 10);
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val)) setBetAmount(val);
                 }}
+                step={activeCoin === 'BTC' ? '0.000001' : '0.01'}
                 className="w-full bg-black border-2 border-[#333] p-4 text-2xl font-mono text-white focus:border-[#FFD700] outline-none" 
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-2">
@@ -3507,10 +3523,17 @@ export default function App() {
                   onClick={() => handleAdjustBet('double')}
                   className="px-2 py-1 bg-[#333] text-[10px] font-bold hover:bg-[#444] transition-colors border border-zinc-700"
                 >
-                  2X
+                  2x
                 </button>
               </div>
             </div>
+            
+            <button 
+                onClick={placeBet}
+                className="w-full py-4 mt-4 bg-[#FFD700] text-black font-black uppercase italic hover:bg-white transition-all shadow-[0_10px_30px_rgba(255,215,0,0.2)]"
+            >
+                Place Bet {formatBetAmount(betAmount, activeCoin)} {activeCoin}
+            </button>
             
             <div className="flex justify-between items-center bg-black border-2 border-[#333] p-3 rounded mt-2">
               <span className="text-[10px] uppercase font-bold text-[#888]">Auto Ride Mode (Auto-Bet)</span>

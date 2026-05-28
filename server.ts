@@ -224,6 +224,28 @@ async function startServer() {
     }, {} as Record<string, { min: number, max: number }>);
     res.json(limits);
   });
+  app.get("/api/config/rates", async (req, res) => {
+    if (!db) return res.json({});
+    try {
+      const ratesRef = doc(db, 'admin', 'rates');
+      const ratesSnap = await getDoc(ratesRef);
+      const now = Date.now();
+      
+      if (ratesSnap.exists()) {
+        const ratesData = ratesSnap.data();
+        if (ratesData.updatedAt && (now - ratesData.updatedAt.toMillis() < 5 * 60 * 1000)) {
+           return res.json(ratesData.rates);
+        }
+      }
+      
+      // Fetch new rates (Mocked for now as per requirements)
+      const mockRates = { BTC: 65000, ETH: 3500, USDT: 1, SOL: 150, DOGE: 0.15, INR: 0.012 };
+      await setDoc(ratesRef, { rates: mockRates, updatedAt: serverTimestamp() }, { merge: true });
+      res.json(mockRates);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to fetch rates" });
+    }
+  });
 
   app.post("/api/admin/set-crypto", async (req, res) => {
     try {
