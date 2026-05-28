@@ -9,15 +9,67 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAHocKjNGOjhUPJai7ROdQ8bzquO537tQA",
-  authDomain: "eng-scholar-j07pf.firebaseapp.com",
-  projectId: "eng-scholar-j07pf",
-  storageBucket: "eng-scholar-j07pf.firebasestorage.app",
-  messagingSenderId: "233719692690",
-  appId: "1:233719692690:web:004c072eda8132178fd54b",
-  firestoreDatabaseId: "ai-studio-d9c66130-58ba-4b73-97e5-8abb490c2227"
+// Check if the current environment is your Vercel production domain
+const isCustomDomain = typeof window !== 'undefined' && 
+  (window.location.hostname.includes('bullet-ride-desi-crash-game') || window.location.hostname.includes('vercel.app'));
+
+const metaEnv = (import.meta as any).env || {};
+
+// Direct local storage loader for manual overrides
+const getCustomLocalConfig = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem('custom_firebase_config_v2');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (_) {}
+  return null;
 };
+
+const localConfig = getCustomLocalConfig();
+
+// Define fallback defaults for the primary project so the app NEVER crashes
+const DEFAULT_API_KEY = "AIzaSyAHocKjNGOjhUPJai7ROdQ8bzquO537tQA";
+const DEFAULT_AUTH_DOMAIN = "eng-scholar-j07pf.firebaseapp.com";
+const DEFAULT_PROJECT_ID = "eng-scholar-j07pf";
+const DEFAULT_STORAGE_BUCKET = "eng-scholar-j07pf.firebasestorage.app";
+const DEFAULT_MESSAGING_SENDER_ID = "233719692690";
+const DEFAULT_APP_ID = "1:233719692690:web:004c072eda8132178fd54b";
+const DEFAULT_FIRESTORE_DATABASE_ID = "ai-studio-d9c66130-58ba-4b73-97e5-8abb490c2227";
+
+export const firebaseConfig = {
+  // If the user supplied their custom config in env vars or local storage, use it.
+  // Otherwise, default safely to the working config.
+  
+  apiKey: localConfig?.apiKey || metaEnv.VITE_FIREBASE_API_KEY || DEFAULT_API_KEY,
+  
+  authDomain: localConfig?.authDomain || metaEnv.VITE_FIREBASE_AUTH_DOMAIN || 
+    (isCustomDomain ? "clipnova-f259d.firebaseapp.com" : DEFAULT_AUTH_DOMAIN),
+    
+  projectId: localConfig?.projectId || metaEnv.VITE_FIREBASE_PROJECT_ID || 
+    (isCustomDomain ? "clipnova-f259d" : DEFAULT_PROJECT_ID),
+    
+  storageBucket: localConfig?.storageBucket || metaEnv.VITE_FIREBASE_STORAGE_BUCKET || 
+    (isCustomDomain ? "clipnova-f259d.firebasestorage.app" : DEFAULT_STORAGE_BUCKET),
+    
+  messagingSenderId: localConfig?.messagingSenderId || metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || 
+    (isCustomDomain ? "" : DEFAULT_MESSAGING_SENDER_ID),
+    
+  appId: localConfig?.appId || metaEnv.VITE_FIREBASE_APP_ID || 
+    (isCustomDomain ? "" : DEFAULT_APP_ID),
+    
+  firestoreDatabaseId: localConfig?.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || 
+    (isCustomDomain ? "" : DEFAULT_FIRESTORE_DATABASE_ID)
+};
+
+// If isCustomDomain fallback values ended up with missing keys, patch using Defaults to absolutely prevent crashes
+if (!firebaseConfig.apiKey) {
+  firebaseConfig.apiKey = DEFAULT_API_KEY;
+}
+if (!firebaseConfig.appId) {
+  firebaseConfig.appId = DEFAULT_APP_ID;
+}
 
 // Standard clean Firestore initialization. Re-use dbId correctly.
 const app = initializeApp(firebaseConfig);

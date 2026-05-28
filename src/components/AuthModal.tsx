@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Mail, Lock, Chrome, Loader2, X, AlertCircle, 
-  UserPlus, LogIn, ChevronRight, CheckCircle2, User 
+  UserPlus, LogIn, ChevronRight, CheckCircle2, User,
+  Settings, Save, RotateCcw, HelpCircle
 } from 'lucide-react';
 import { 
-  auth, googleProvider 
+  auth, googleProvider, firebaseConfig 
 } from '../lib/firebase';
 import { 
   signInWithPopup, signInWithEmailAndPassword, 
@@ -27,6 +28,43 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
   const [error, setError] = useState<string | null>(null);
   const [isDomainError, setIsDomainError] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Custom Developer Firebase Config states
+  const [showDevSettings, setShowDevSettings] = useState(false);
+  const [devApiKey, setDevApiKey] = useState(firebaseConfig.apiKey || '');
+  const [devAuthDomain, setDevAuthDomain] = useState(firebaseConfig.authDomain || '');
+  const [devProjectId, setDevProjectId] = useState(firebaseConfig.projectId || '');
+  const [devStorageBucket, setDevStorageBucket] = useState(firebaseConfig.storageBucket || '');
+  const [devMessagingSenderId, setDevMessagingSenderId] = useState(firebaseConfig.messagingSenderId || '');
+  const [devAppId, setDevAppId] = useState(firebaseConfig.appId || '');
+  const [devDatabaseId, setDevDatabaseId] = useState(firebaseConfig.firestoreDatabaseId || '');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const handleSaveDevConfig = (e: FormEvent) => {
+    e.preventDefault();
+    const newConfig = {
+      apiKey: devApiKey.trim(),
+      authDomain: devAuthDomain.trim(),
+      projectId: devProjectId.trim(),
+      storageBucket: devStorageBucket.trim(),
+      messagingSenderId: devMessagingSenderId.trim(),
+      appId: devAppId.trim(),
+      firestoreDatabaseId: devDatabaseId.trim(),
+    };
+    localStorage.setItem('custom_firebase_config_v2', JSON.stringify(newConfig));
+    setSaveSuccess(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 1200);
+  };
+
+  const handleResetDevConfig = () => {
+    localStorage.removeItem('custom_firebase_config_v2');
+    setSaveSuccess(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 1200);
+  };
 
   const handleDemoOrGuestLogin = async () => {
     setLoading(true);
@@ -342,6 +380,127 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
                       Login Now
                     </button>
                   </p>
+                )}
+              </div>
+
+              {/* Developer Configuration Expander */}
+              <div className="mt-8 pt-6 border-t border-zinc-805/40">
+                <button
+                  type="button"
+                  onClick={() => setShowDevSettings(!showDevSettings)}
+                  className="w-full flex items-center justify-between px-4 py-3.5 bg-zinc-900 hover:bg-zinc-800/60 border border-zinc-800 rounded-2xl text-[11px] font-black uppercase tracking-widest text-[#FFD700] transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-[#FFD700]" />
+                    <span>🛠️ Custom Firebase Config (उन्नत सेटिंग्स)</span>
+                  </span>
+                  <span className="text-zinc-500 font-bold">{showDevSettings ? 'Collapse ▲' : 'Expand ▼'}</span>
+                </button>
+
+                {showDevSettings && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    className="mt-4 p-5 bg-black/60 border border-zinc-850 rounded-2xl space-y-4"
+                  >
+                    <div className="flex items-center justify-between text-[10px] uppercase font-black tracking-widest text-zinc-400">
+                      <span>Active Project ID:</span>
+                      <span className="text-[#FFD700] font-mono lowercase select-all bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">{firebaseConfig.projectId}</span>
+                    </div>
+                    
+                    <p className="text-zinc-400 text-[10px] leading-relaxed">
+                      यदि आपका स्वयं का Custom Domain या Firebase Project है (जैसे <code className="text-[#FFD700] bg-zinc-900 px-1 py-0.5 rounded">clipnova-f259d</code>), तो नीचे क्रेडेंशियल्स दर्ज करें ताकि Google Login सीधे काम करे।
+                    </p>
+
+                    <form onSubmit={handleSaveDevConfig} className="space-y-3">
+                      <div>
+                        <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Firebase API Key</label>
+                        <input
+                          type="text"
+                          value={devApiKey}
+                          onChange={(e) => setDevApiKey(e.target.value)}
+                          placeholder="AIzaSy..."
+                          required
+                          className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Project ID</label>
+                          <input
+                            type="text"
+                            value={devProjectId}
+                            onChange={(e) => setDevProjectId(e.target.value)}
+                            placeholder="clipnova-f259d"
+                            required
+                            className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Auth Domain</label>
+                          <input
+                            type="text"
+                            value={devAuthDomain}
+                            onChange={(e) => setDevAuthDomain(e.target.value)}
+                            placeholder="example.firebaseapp.com"
+                            required
+                            className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Storage Bucket</label>
+                          <input
+                            type="text"
+                            value={devStorageBucket}
+                            onChange={(e) => setDevStorageBucket(e.target.value)}
+                            placeholder="example.firebasestorage.app"
+                            required
+                            className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">App ID</label>
+                          <input
+                            type="text"
+                            value={devAppId}
+                            onChange={(e) => setDevAppId(e.target.value)}
+                            placeholder="1:12345:web:abcd"
+                            required
+                            className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          type="submit"
+                          className="flex-1 py-3 bg-[#FFD700] hover:bg-white text-black font-black uppercase text-[10px] italic rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>Save & Restart 🔄</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetDevConfig}
+                          className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-350 font-black uppercase text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5"
+                          title="Reset to App Default"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset</span>
+                        </button>
+                      </div>
+
+                      {saveSuccess && (
+                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-center font-bold text-[10px] rounded-xl animate-pulse uppercase tracking-wider">
+                          🔄 Saving Firebase Keys & restarting... 🏎️
+                        </div>
+                      )}
+                    </form>
+                  </motion.div>
                 )}
               </div>
 
