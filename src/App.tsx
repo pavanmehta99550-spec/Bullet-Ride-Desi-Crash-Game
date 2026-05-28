@@ -191,6 +191,13 @@ export default function App() {
   useEffect(() => { hasCashedOutRef.current = hasCashedOut; }, [hasCashedOut]);
   useEffect(() => { activeCoinRef.current = activeCoin; }, [activeCoin]);
 
+  useEffect(() => {
+    const config = cryptoConfig[activeCoin];
+    if (config) {
+      setBetAmount(config.min * 10);
+    }
+  }, [activeCoin]);
+
   const handleCoinChange = async (symbol: string) => {
     setActiveCoin(symbol);
     const bal = coinBalances[symbol] || 0;
@@ -3498,7 +3505,7 @@ export default function App() {
             <div className="flex justify-between items-end mb-2">
               <label className="text-[10px] uppercase font-bold text-[#888]">Riding Stake</label>
               <div className="text-[10px] font-mono text-zinc-400">
-                {activeCoin !== 'INR' && rates[activeCoin] ? `≈ ₹${calculateFiatValue(betAmount, activeCoin, rates)?.toFixed(2)}` : ''}
+                {activeCoin !== 'INR' && rates[activeCoin] ? `≈ ${calculateFiatValue(betAmount, activeCoin, rates)}` : ''}
               </div>
             </div>
             <div className="relative">
@@ -3529,7 +3536,7 @@ export default function App() {
             </div>
             
             <button 
-                onClick={placeBet}
+                onClick={startRound}
                 className="w-full py-4 mt-4 bg-[#FFD700] text-black font-black uppercase italic hover:bg-white transition-all shadow-[0_10px_30px_rgba(255,215,0,0.2)]"
             >
                 Place Bet {formatBetAmount(betAmount, activeCoin)} {activeCoin}
