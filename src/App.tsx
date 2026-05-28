@@ -189,6 +189,25 @@ export default function App() {
            return prev;
          });
 
+         // Prepend to live history local state for immediate reactive update
+         if (data.roundId) {
+           const formattedTime = new Date().toLocaleTimeString([], {
+             hour: '2-digit', 
+             minute: '2-digit', 
+             second: '2-digit',
+             hour12: true
+           });
+           const newHistoryItem = {
+             id: data.roundId,
+             multiplier: data.crashPoint,
+             time: formattedTime
+           };
+           setHistory(prev => {
+             if (prev.some(item => item.id === data.roundId)) return prev;
+             return [newHistoryItem, ...prev].slice(0, 20);
+           });
+         }
+
          // Settle Loss
          if (hasActiveBetRef.current && !hasCashedOutRef.current && userRef.current) {
             saveGameHistory(userRef.current.uid, {
@@ -224,9 +243,9 @@ export default function App() {
     }, (err) => {
       console.error("Firestore onSnapshot error:", err);
       if (!isCurrent) return;
-      // Fallback: Start SMARTER local game loop if Firestore sync is blocked
-      if (err.message.includes("permission") || err.message.includes("insufficient")) {
-        console.warn("Starting SMOOTH local game loop fallback due to permission issues.");
+      // Fallback: Start SMARTER local game loop if Firestore sync is blocked, offline, or errored
+      {
+        console.warn("Starting SMOOTH local game loop fallback due to sync issues:", err);
         
         let currentStatus: 'WAITING' | 'IN_PROGRESS' | 'CRASHED' = 'WAITING';
         let roundId = "fallback_" + Math.random().toString(36).substring(2, 9);
@@ -418,6 +437,9 @@ export default function App() {
         };
       });
       setHistory(historyData as any);
+      setIsHistoryLoading(false);
+    }, (err) => {
+      console.warn("Firestore globalHistory onSnapshot error, using safe local cache:", err.message);
       setIsHistoryLoading(false);
     });
     return () => {

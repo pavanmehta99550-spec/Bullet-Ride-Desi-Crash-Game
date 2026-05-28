@@ -21,7 +21,17 @@ const getCustomLocalConfig = () => {
   try {
     const saved = localStorage.getItem('custom_firebase_config_v2');
     if (saved) {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      // Clean up empty fields so they don't override default values with empty strings
+      const cleaned: any = {};
+      Object.keys(parsed).forEach(key => {
+        if (parsed[key] && typeof parsed[key] === 'string' && parsed[key].trim() !== '') {
+          cleaned[key] = parsed[key].trim();
+        } else if (parsed[key]) {
+          cleaned[key] = parsed[key];
+        }
+      });
+      return Object.keys(cleaned).length > 0 ? cleaned : null;
     }
   } catch (_) {}
   return null;
