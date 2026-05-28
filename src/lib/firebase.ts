@@ -117,19 +117,55 @@ export async function syncUserProfile(user: any) {
   try {
     const userDoc = await getDoc(userRef);
     if (!userDoc.exists()) {
+      // Check if we have a cached referrer code in our browser
+      let referredByUid: string | null = null;
+      try {
+        referredByUid = localStorage.getItem('referral_referrer_uid');
+      } catch (_) {}
+
       // New user registration
-      const userData = {
+      const userData: any = {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName || 'Player',
         walletBalance: 0, 
         coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 },
         activeCoin: 'INR',
+        bonus_balance: 0,
+        has_deposited: false,
+        referralCode: user.uid,
         createdAt: Date.now(),
       };
+
+      if (referredByUid && referredByUid !== user.uid) {
+        userData.referredBy = referredByUid;
+      }
       
       try {
         await setDoc(userRef, userData, { merge: true });
+        
+        // If referred, trigger the atomic transaction block on our secure backend API
+        if (referredByUid && referredByUid !== user.uid) {
+          fetch('/api/user/register-referral', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.uid, referredBy: referredByUid })
+          })
+          .then(async (res) => {
+            if (res.ok) {
+              console.log("[REFERRAL] Registration credit processed successfully.");
+              try {
+                localStorage.removeItem('referral_referrer_uid');
+              } catch (_) {}
+            } else {
+              const errData = await res.json();
+              console.error("[REFERRAL] Failed to register referral:", errData.error);
+            }
+          })
+          .catch(err => {
+            console.error("[REFERRAL] Failed to notify API:", err);
+          });
+        }
       } catch (writeErr) {
         handleFirestoreError(writeErr, OperationType.CREATE, `users/${user.uid}`);
       }
@@ -138,6 +174,22 @@ export async function syncUserProfile(user: any) {
       return userData;
     } else {
       const data = userDoc.data();
+      
+      // Lazy migration: Ensure existing user doc has a referralCode
+      if (!data.referralCode || data.bonus_balance === undefined) {
+        const migration: any = {};
+        if (!data.referralCode) migration.referralCode = user.uid;
+        if (data.bonus_balance === undefined) migration.bonus_balance = 0;
+        if (data.has_deposited === undefined) migration.has_deposited = false;
+        
+        try {
+          await setDoc(userRef, migration, { merge: true });
+        } catch (_) {}
+        const updatedData = { ...data, ...migration };
+        localStorage.setItem(localKey, JSON.stringify(updatedData));
+        return updatedData;
+      }
+
       localStorage.setItem(localKey, JSON.stringify(data));
       return data;
     }
@@ -160,6 +212,9 @@ export async function syncUserProfile(user: any) {
       walletBalance: 50000,
       coinBalances: { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500 },
       activeCoin: 'INR',
+      bonus_balance: 0,
+      has_deposited: false,
+      referralCode: user.uid,
       createdAt: Date.now(),
     };
   }

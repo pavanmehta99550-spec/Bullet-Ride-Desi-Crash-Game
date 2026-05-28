@@ -2,13 +2,17 @@
   "entities": {
     "user": {
       "title": "User Profile",
-      "description": "Stores user balance and profile information",
+      "description": "Stores user balance, profile, referral progress, and deposit status",
       "type": "object",
       "properties": {
         "uid": { "type": "string", "description": "Firebase Auth UID" },
         "email": { "type": "string", "description": "User email" },
         "displayName": { "type": "string", "description": "User display name" },
         "walletBalance": { "type": "number", "description": "Available game balance" },
+        "bonus_balance": { "type": "number", "description": "Promotional bonus balance, not withdrawable" },
+        "has_deposited": { "type": "boolean", "description": "Has made at least one approved deposit" },
+        "referredBy": { "type": "string", "description": "UID of the user who referred this player" },
+        "referralCode": { "type": "string", "description": "Unique referral code for sharing" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

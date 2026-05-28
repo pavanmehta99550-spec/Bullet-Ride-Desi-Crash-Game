@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldAlert, RefreshCw, Bike, Gauge, User, History, 
   ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2, X,
-  Volume2, VolumeX
+  Volume2, VolumeX, Gift
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
@@ -61,6 +61,13 @@ export default function App() {
   const [history, setHistory] = useState<GameHistory[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [betAmount, setBetAmount] = useState(500);
+  
+  // Referral and Deposit Unlock states
+  const [bonusBalance, setBonusBalance] = useState(0);
+  const [hasDeposited, setHasDeposited] = useState(false);
+  const [referralCode, setReferralCode] = useState('');
+  const [referredBy, setReferredBy] = useState('');
+  const [copied, setCopied] = useState(false);
   const [balance, setBalance] = useState(0);
   const [activeCoin, setActiveCoin] = useState<string>('INR');
   const [coinBalances, setCoinBalances] = useState<Record<string, number>>({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
@@ -165,6 +172,18 @@ export default function App() {
   useEffect(() => {
     let isCurrent = true;
     let intervalId: any = null;
+
+    // Detect and capture referral code from URL query parameter
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get('ref');
+      if (refCode && refCode.trim() !== '') {
+        localStorage.setItem('referral_referrer_uid', refCode.trim());
+        console.log(`[REFERRAL CAPTURED] Referrer UID captured: ${refCode}`);
+      }
+    } catch (e) {
+      console.warn("Could not capture referral parameter:", e);
+    }
 
     fetchCoins();
 
@@ -376,6 +395,11 @@ export default function App() {
           setBalance(mergedBalances[curActiveCoin] || 0);
           setWithdrawableBalance(mergedBalances[curActiveCoin] || 0);
           setIsBlocked(!!profileData.isBlocked);
+          
+          setBonusBalance(profileData.bonus_balance || 0);
+          setHasDeposited(!!profileData.has_deposited);
+          setReferralCode(profileData.referralCode || firebaseUser.uid);
+          setReferredBy(profileData.referredBy || '');
         }
       } else {
         setUser(null);
@@ -385,6 +409,11 @@ export default function App() {
         setCoinBalances({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
         setWithdrawableBalance(0);
         setIsBlocked(false);
+
+        setBonusBalance(0);
+        setHasDeposited(false);
+        setReferralCode('');
+        setReferredBy('');
       }
       setAuthLoading(false);
     });
@@ -425,6 +454,11 @@ export default function App() {
         setCoinBalances(mergedBalances);
         setBalance(mergedBalances[curActiveCoin] || 0);
         setIsBlocked(!!data.isBlocked);
+
+        setBonusBalance(data.bonus_balance || 0);
+        setHasDeposited(!!data.has_deposited);
+        setReferralCode(data.referralCode || user.uid);
+        setReferredBy(data.referredBy || '');
       }
     });
     return () => {
@@ -508,6 +542,11 @@ export default function App() {
         setBalance(mergedBalances[curActiveCoin] || 0);
         setWithdrawableBalance(mergedBalances[curActiveCoin] || 0);
         setIsBlocked(!!profileData.isBlocked);
+
+        setBonusBalance(profileData.bonus_balance || 0);
+        setHasDeposited(!!profileData.has_deposited);
+        setReferralCode(profileData.referralCode || guestUser.uid);
+        setReferredBy(profileData.referredBy || '');
       }
     } catch (e) {
       console.warn("Guest profile sync failed, falling back to clean local representation", e);
@@ -519,6 +558,10 @@ export default function App() {
       setBalance(50000);
       setWithdrawableBalance(50000);
       setIsBlocked(false);
+      setBonusBalance(0);
+      setHasDeposited(false);
+      setReferralCode(guestUser.uid);
+      setReferredBy('');
     } finally {
       setAuthLoading(false);
     }
@@ -776,6 +819,14 @@ export default function App() {
       setError("Valid amount dalo bhai!");
       return;
     }
+
+    // Client-side guard for successful deposit
+    if (!hasDeposited) {
+      setError("Withdrawal locked hai bhai! Pehle kam se kam ek successful deposit approved hona chahiye. 🔒 (Complete 1 deposit to unlock!)");
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
     const coinBalance = coinBalances[selectedCoin.symbol] || 0;
     if (amount > coinBalance) {
       setError(`Aapke paas is coin (${selectedCoin.symbol}) me sirf ${coinBalance} balance ya fuel nahi hai!`);
@@ -794,6 +845,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount, coin: selectedCoin, userAddress: userWithdrawAddress, userId: user.uid })
       });
+      const data = await res.json();
       if (res.ok) {
         updateUserBalance(user.uid, coinBalance - amount, selectedCoin.symbol);
         setWithdrawableBalance(prev => Math.max(0, prev - amount));
@@ -802,6 +854,9 @@ export default function App() {
         setWithdrawStep('coin');
         setUserWithdrawAddress('');
         showAdminStatus("Withdrawal Request Sent! 💸");
+      } else {
+        setError(data.error || "Withdrawal request failed!");
+        setTimeout(() => setError(null), 5000);
       }
     } catch (err) {
       setError("Withdrawal request failed!");
@@ -1883,9 +1938,9 @@ export default function App() {
 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
-                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Fuel Balance</p>
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Fuel Balance</p>
                     {coinBalances[activeCoin] > 0 ? (
-                      <p className="text-2xl font-mono text-[#FFD700]">
+                      <p className="text-xl font-mono text-[#FFD700] truncate">
                         {activeCoin === 'INR' ? '₹' : ''}
                         {coinBalances[activeCoin].toLocaleString(undefined, { 
                           minimumFractionDigits: activeCoin === 'INR' ? 2 : 4,
@@ -1898,12 +1953,79 @@ export default function App() {
                     )}
                   </div>
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
-                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Total Rides</p>
-                    <p className="text-2xl font-mono text-white">{history.length}</p>
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Total Rides</p>
+                    <p className="text-xl font-mono text-white">{history.length}</p>
+                  </div>
+                  <div className="bg-[#1A1300] border border-[#FFD700]/30 p-4 rounded-2xl">
+                    <p className="text-[10px] font-bold text-[#FFD700]/70 uppercase tracking-widest mb-1 flex items-center gap-1">
+                      <span>Promo Bonus</span>
+                      <span className="text-[#FFD700]">🎁</span>
+                    </p>
+                    <p className="text-xl font-mono text-[#FFD700] font-black">{bonusBalance} pts</p>
+                  </div>
+                  <div className={`p-4 rounded-2xl border ${hasDeposited ? 'bg-emerald-950/20 border-emerald-500/20' : 'bg-amber-950/20 border-amber-500/20'}`}>
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Withdrawals</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`w-2 h-2 rounded-full ${hasDeposited ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                      <p className={`text-xs font-black uppercase italic ${hasDeposited ? 'text-emerald-400' : 'text-amber-500'}`}>
+                        {hasDeposited ? "Unlocked 🔓" : "Locked 🔒"}
+                      </p>
+                    </div>
+                    {!hasDeposited && (
+                      <p className="text-[8px] text-amber-500/80 mt-1 leading-normal">First approved deposit unlocks withdrawals.</p>
+                    )}
                   </div>
                 </div>
 
-                <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl mb-8 flex justify-between items-center px-4">
+                {/* Referral Link & Dashboard Widget */}
+                <div className="bg-[#121212]/90 border border-[#FFD700]/20 rounded-2xl p-4 mb-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-3 opacity-10">
+                    <Gift className="w-12 h-12 text-[#FFD700]" />
+                  </div>
+                  <h4 className="text-xs font-black uppercase italic text-[#FFD700] tracking-widest flex items-center gap-2 mb-2">
+                    <Gift className="w-4 h-4 text-[#FFD700]" />
+                    Share & Earn Program
+                  </h4>
+                  <p className="text-[10px] text-zinc-400 leading-normal mb-3">
+                    Sign up friends! When they register with your link:
+                    <br />
+                    <span className="text-[#FFD700] font-bold">• You get 500 bonus points</span>
+                    <br />
+                    <span className="text-[#FFD700] font-bold">• They get 1000 signup bonus points</span>
+                  </p>
+                  
+                  <div className="space-y-1.5">
+                    <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Your Referral Link</p>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value={`${window.location.origin}/?ref=${user.uid}`}
+                        className="flex-1 bg-black/60 border border-zinc-800 text-zinc-400 font-mono text-xs rounded-xl px-3 py-2 outline-none select-all"
+                      />
+                      <button 
+                        onClick={() => {
+                          try {
+                            navigator.clipboard.writeText(`${window.location.origin}/?ref=${user.uid}`);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          } catch (_) {}
+                        }}
+                        className="px-4 py-2 bg-[#FFD700] text-black font-black uppercase italic text-xs rounded-xl hover:bg-[#FFD700]/80 transition-all flex items-center gap-1 shrink-0"
+                      >
+                        {copied ? "Copied! ✓" : "Copy Link"}
+                      </button>
+                    </div>
+                  </div>
+                  {referredBy && (
+                    <div className="mt-3 pt-3 border-t border-zinc-800/50 flex justify-between items-center text-[10px]">
+                      <span className="text-zinc-500 font-bold uppercase tracking-widest text-[9px]">Referred By UID</span>
+                      <span className="font-mono text-zinc-400 bg-zinc-800/40 px-2 py-0.5 rounded-md truncate max-w-[200px]">{referredBy}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl mb-6 flex justify-between items-center px-4">
                    <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Admin Access Key (UID)</p>
                    <p className="text-[9px] font-mono text-zinc-500 select-all">{user?.uid}</p>
                 </div>

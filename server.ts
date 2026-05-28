@@ -16,7 +16,8 @@ import {
   where,
   orderBy,
   limit,
-  deleteField
+  deleteField,
+  runTransaction
 } from "firebase/firestore";
 import fs from "fs";
 
@@ -189,7 +190,15 @@ async function startServer() {
     request.status = 'approved';
     if (db) {
        await updateDoc(doc(db, 'deposits', requestId.toString()), { status: 'approved' });
-       // Note: Balance is handled on client side in App.tsx but admin also pushes notification
+       
+       // Settle the flag has_deposited: true in the user document to unlock withdrawals
+       try {
+         await setDoc(doc(db, 'users', request.userId), { has_deposited: true }, { merge: true });
+         console.log(`[DEPOSIT APPROVE] Set has_deposited: true for user ${request.userId}`);
+       } catch (dbErr: any) {
+         console.error("[DEPOSIT APPROVE] Failed to update user status in DB:", dbErr.message);
+       }
+
        const notification = {
          id: Date.now().toString(), type: 'deposit_approved', amount: request.amount, coin: request.coin,
          userId: request.userId, timestamp: new Date().toISOString(),
@@ -203,10 +212,153 @@ async function startServer() {
 
   app.post("/api/withdraw/request", async (req, res) => {
     const { amount, coin, userAddress, userId } = req.body;
-    const request = { id: Date.now(), amount: parseFloat(amount), coin, userAddress, userId, status: 'pending', timestamp: new Date().toISOString() };
+    const requestedAmount = parseFloat(amount);
+
+    if (isNaN(requestedAmount) || requestedAmount <= 0) {
+      return res.status(400).json({ error: "Sahi amount dalo bhai!" });
+    }
+
+    if (db && userId) {
+      try {
+        const userRef = doc(db, 'users', userId);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+
+          // Rule 1: Must have made at least one successful deposit
+          if (userData.has_deposited !== true) {
+            return res.status(403).json({
+              error: "Withdrawal locked hai bhai! Pehle kam se kam ek successful deposit (minimum top-up) authorized hona chahiye. 🔒 (Unlock withdrawals by completing 1 deposit!)"
+            });
+          }
+
+          // Rule 2: Non-withdrawable bonus check
+          const symbol = coin?.symbol || "INR";
+          const coinBalances = userData.coinBalances || {};
+          const coinBalance = coinBalances[symbol] || 0;
+
+          if (requestedAmount > coinBalance) {
+            return res.status(400).json({ error: `Aapke paas is coin (${symbol}) me sirf ${coinBalance} balance hai!` });
+          }
+        }
+      } catch (err: any) {
+        console.error("[WITHDRAW SECURITY] Error verifying user status:", err.message);
+      }
+    }
+
+    const request = { id: Date.now(), amount: requestedAmount, coin, userAddress, userId, status: 'pending', timestamp: new Date().toISOString() };
     withdrawalRequests.push(request);
-    if (db) await setDoc(doc(db, 'withdrawals', request.id.toString()), request);
+    
+    if (db) {
+      try {
+        await setDoc(doc(db, 'withdrawals', request.id.toString()), request);
+      } catch (err: any) {
+        console.error("[WITHDRAW SECURITY] Save withdrawal document failed:", err.message);
+      }
+    }
     res.json({ status: "ok", message: "Withdrawal request submitted!" });
+  });
+
+  app.post("/api/user/register-referral", async (req, res) => {
+    const { userId, referredBy } = req.body;
+
+    if (!userId || !referredBy) {
+      return res.status(400).json({ error: "UserId or referredBy parameter missing" });
+    }
+
+    if (userId === referredBy) {
+      return res.status(400).json({ error: "Apne aap ko refer nahi kar sakte bhai! 😉" });
+    }
+
+    if (!db) {
+      return res.json({ status: "local_only", message: "Firestore database state offline, skipping credit." });
+    }
+
+    try {
+      const referrerRef = doc(db, "users", referredBy);
+      const newUserRef = doc(db, "users", userId);
+
+      await runTransaction(db, async (transaction) => {
+        const referrerDoc = await transaction.get(referrerRef);
+        const newUserDoc = await transaction.get(newUserRef);
+
+        if (!referrerDoc.exists()) {
+          throw new Error("Referrer account does not exist.");
+        }
+
+        const freshNewUserData = newUserDoc.data() || {};
+        if (freshNewUserData.referralPaid === true) {
+          throw new Error("This user is already referred.");
+        }
+
+        const freshReferrerData = referrerDoc.data() || {};
+
+        const currentReferrerBonus = freshReferrerData.bonus_balance || 0;
+        const currentNewUserBonus = freshNewUserData.bonus_balance || 0;
+
+        // Perform increment updates
+        transaction.update(referrerRef, {
+          bonus_balance: currentReferrerBonus + 500,
+          updatedAt: serverTimestamp()
+        });
+
+        transaction.update(newUserRef, {
+          bonus_balance: currentNewUserBonus + 1000,
+          referredBy: referredBy,
+          referralPaid: true,
+          updatedAt: serverTimestamp()
+        });
+
+        // Add matching logs and live notifications instantly
+        const rLogRef = doc(db, "referral_logs", `${referredBy}_${userId}`);
+        transaction.set(rLogRef, {
+          referrerUid: referredBy,
+          newUserId: userId,
+          referrerEmail: freshReferrerData.email || "",
+          newUserEmail: freshNewUserData.email || "",
+          referrerBonus: 500,
+          newUserBonus: 1000,
+          timestamp: serverTimestamp()
+        }, { merge: true });
+
+        // Add Notification for Referrer
+        const refNotificationId = `ref_bonus_${Date.now()}_${referredBy}`;
+        const refNotificationRef = doc(db, "notifications", refNotificationId);
+        const refNotification = {
+          id: refNotificationId,
+          userId: referredBy,
+          type: "referral_bonus",
+          amount: 500,
+          coin: { name: "Referral Bonus", symbol: "BONUS", color: "#FFD700" },
+          timestamp: new Date().toISOString(),
+          message: `Congratulations! ${freshNewUserData.displayName || "A player"} registered using your referral link. You got 500 bonus points! 🎁`
+        };
+        transaction.set(refNotificationRef, refNotification);
+        userNotifications.push(refNotification);
+
+        // Add Notification for New User
+        const newNotificationId = `new_bonus_${Date.now()}_${userId}`;
+        const newNotificationRef = doc(db, "notifications", newNotificationId);
+        const newNotification = {
+          id: newNotificationId,
+          userId: userId,
+          type: "signup_bonus",
+          amount: 1000,
+          coin: { name: "Signup Bonus", symbol: "BONUS", color: "#FFD700" },
+          timestamp: new Date().toISOString(),
+          message: `Welcome! You earned 1000 signup bonus points for registering with a referral link. 🚀`
+        };
+        transaction.set(newNotificationRef, newNotification);
+        userNotifications.push(newNotification);
+
+        console.log(`[REFERRAL TRANSACTION] Success! Referrer: ${referredBy} (+500), New User: ${userId} (+1000)`);
+      });
+
+      res.json({ status: "ok", message: "Referral points processed successfully! 🎁" });
+    } catch (err: any) {
+      console.error("[REFERRAL TRANSACTION FAILED]:", err.message);
+      res.status(500).json({ error: err.message || "Referral processing failed" });
+    }
   });
 
   app.get("/api/admin/withdrawals", (req, res) => res.json(withdrawalRequests));
