@@ -66,7 +66,23 @@ export default function App() {
   const [coinBalances, setCoinBalances] = useState<Record<string, number>>({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
   const [withdrawableBalance, setWithdrawableBalance] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [isAutoPlay, setIsAutoPlay] = useState(false);
+  const [isAutoPlay, setIsAutoPlay] = useState(() => {
+    try {
+      return localStorage.getItem('aviator_is_auto_play') === 'true';
+    } catch (_) { return false; }
+  });
+  const [isAutoExit, setIsAutoExit] = useState(() => {
+    try {
+      return localStorage.getItem('aviator_is_auto_exit') === 'true';
+    } catch (_) { return false; }
+  });
+  const [autoExitValue, setAutoExitValue] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('aviator_auto_exit_value');
+      return saved ? parseFloat(saved) : 2.00;
+    } catch (_) { return 2.00; }
+  });
+
   const [globalStatus, setGlobalStatus] = useState<'WAITING' | 'IN_PROGRESS' | 'CRASHED'>('WAITING');
   const [globalCountdown, setGlobalCountdown] = useState<number>(0);
   const [isBetQueued, setIsBetQueued] = useState(false);
@@ -86,6 +102,8 @@ export default function App() {
 
   // Sync refs to avoid stale closures in core intervals
   const isAutoPlayRef = useRef(isAutoPlay);
+  const isAutoExitRef = useRef(isAutoExit);
+  const autoExitValueRef = useRef(autoExitValue);
   const isBetQueuedRef = useRef(isBetQueued);
   const userRef = useRef(user);
   const balanceRef = useRef(balance);
@@ -97,7 +115,27 @@ export default function App() {
   const hasActiveBetRef = useRef(hasActiveBet);
   const hasCashedOutRef = useRef(hasCashedOut);
 
-  useEffect(() => { isAutoPlayRef.current = isAutoPlay; }, [isAutoPlay]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('aviator_is_auto_play', isAutoPlay ? 'true' : 'false');
+    } catch (_) {}
+    isAutoPlayRef.current = isAutoPlay;
+  }, [isAutoPlay]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('aviator_is_auto_exit', isAutoExit ? 'true' : 'false');
+    } catch (_) {}
+    isAutoExitRef.current = isAutoExit;
+  }, [isAutoExit]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('aviator_auto_exit_value', autoExitValue.toString());
+    } catch (_) {}
+    autoExitValueRef.current = autoExitValue;
+  }, [autoExitValue]);
+
   useEffect(() => { isBetQueuedRef.current = isBetQueued; }, [isBetQueued]);
   useEffect(() => { userRef.current = user; }, [user]);
   useEffect(() => { balanceRef.current = balance; }, [balance]);
@@ -518,11 +556,15 @@ export default function App() {
     }
   };
 
-  const cashOut = () => {
-    if (hasCashedOut || isCrashed || !isPlaying || !hasActiveBet || globalStatus !== 'IN_PROGRESS') return;
+  const cashOut = (forcedMultiplier?: number) => {
+    if (hasCashedOutRef.current || isCrashedRef.current || !isPlayingRef.current || !hasActiveBetRef.current || globalStatus !== 'IN_PROGRESS') return;
     
-    // Calculate final win using current live multiplier
-    const currentMult = multiplier;
+    // Calculate final win using current live multiplier or forced auto exit multiplier
+    const currentMult = forcedMultiplier !== undefined ? forcedMultiplier : multiplierRef.current;
+    
+    // Safety check - make sure that currentMult is not negative or zero
+    if (currentMult <= 1.00) return;
+
     const currentBet = betAmountRef.current;
     const currentBal = balanceRef.current;
     const winAmount = Math.floor(currentBet * currentMult);
@@ -575,6 +617,15 @@ export default function App() {
     const targetCrash = crashPointRef.current || 2;
 
     const timeElapsed = elapsed / 1000;
+
+    // Check Auto-Exit (multiplier matches or exceeds target autoExit threshold) before crash is triggered
+    if (isAutoExitRef.current && hasActiveBetRef.current && !hasCashedOutRef.current) {
+      const targetVal = autoExitValueRef.current;
+      if (currentMultiplier >= targetVal && targetVal <= targetCrash) {
+        cashOut(targetVal);
+      }
+    }
+
     if (currentMultiplier >= targetCrash) {
       setMultiplier(targetCrash);
       setIsCrashed(true);
@@ -627,6 +678,31 @@ export default function App() {
       }
     };
   }, [isPlaying, isCrashed]);
+
+  const toggleAutoPlay = () => {
+    const nextVal = !isAutoPlay;
+    setIsAutoPlay(nextVal);
+    
+    // If turning on Auto Ride, and we are in WAITING status, and there's no active bet yet, let's place it!
+    if (nextVal && user) {
+      if (globalStatus === 'WAITING' && !hasActiveBet) {
+        if (balance >= betAmount) {
+          setHasActiveBet(true);
+          updateUserBalance(user.uid, balance - betAmount, activeCoin);
+          setWithdrawableBalance(prev => Math.max(0, prev - betAmount));
+        } else {
+          setError("Balance kam hai bhai!");
+          setTimeout(() => setError(null), 3000);
+        }
+      } else if (globalStatus === 'IN_PROGRESS' || globalStatus === 'CRASHED') {
+        // If in progress, queue it
+        setIsBetQueued(true);
+      }
+    } else if (!nextVal) {
+      // If turning off Auto Ride, let's cancel queued bets
+      setIsBetQueued(false);
+    }
+  };
 
   const handleAdjustBet = (type: 'half' | 'double') => {
     if (isPlaying && hasActiveBet && !isCrashed) return;
@@ -2579,15 +2655,10 @@ export default function App() {
               </div>
             </div>
             
-            <div className="flex justify-between items-end mt-4">
-              <label className="text-[10px] uppercase font-bold text-[#888]">Target Multiplier</label>
-              <span className="text-xs text-[#FFD700]">Auto-Exit</span>
-            </div>
-            <input type="text" readOnly value="2.00x" className="w-full bg-black border-2 border-[#333] p-4 text-2xl font-mono text-white opacity-50 cursor-not-allowed" />
-            <div className="flex justify-between items-center bg-black border-2 border-[#333] p-3 rounded">
-              <span className="text-[10px] uppercase font-bold text-[#888]">Auto Ride Mode</span>
+            <div className="flex justify-between items-center bg-black border-2 border-[#333] p-3 rounded mt-2">
+              <span className="text-[10px] uppercase font-bold text-[#888]">Auto Ride Mode (Auto-Bet)</span>
               <button 
-                onClick={() => setIsAutoPlay(!isAutoPlay)}
+                onClick={toggleAutoPlay}
                 className={`w-12 h-6 flex items-center rounded-full px-1 transition-colors ${isAutoPlay ? 'bg-green-600' : 'bg-zinc-800'}`}
               >
                 <motion.div 
@@ -2598,6 +2669,45 @@ export default function App() {
                 />
               </button>
             </div>
+
+            <div className="flex justify-between items-center bg-black border-2 border-[#333] p-3 rounded mt-2">
+              <span className="text-[10px] uppercase font-bold text-[#888]">Auto-Exit (Auto Cash Out)</span>
+              <button 
+                onClick={() => setIsAutoExit(!isAutoExit)}
+                className={`w-12 h-6 flex items-center rounded-full px-1 transition-colors ${isAutoExit ? 'bg-green-600' : 'bg-zinc-800'}`}
+              >
+                <motion.div 
+                  layout
+                  className="w-4 h-4 bg-white rounded-full shadow"
+                  animate={{ x: isAutoExit ? 24 : 0 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              </button>
+            </div>
+
+            {isAutoExit && (
+              <div className="space-y-1.5 mt-2 transition-all">
+                <div className="flex justify-between items-end">
+                  <label className="text-[10px] uppercase font-bold text-[#FFD700]">Target Exit Multiplier</label>
+                  <span className="text-[9px] text-[#888]">Min: 1.01x / Max: 100x</span>
+                </div>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    step="0.1"
+                    min="1.01"
+                    max="100"
+                    value={autoExitValue} 
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setAutoExitValue(isNaN(val) ? 1.01 : val);
+                    }}
+                    className="w-full bg-black border-2 border-[#FFD700]/30 p-4 text-2xl font-mono text-white focus:border-[#FFD700] outline-none" 
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#FFD700] font-mono text-lg font-black">X</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <button 
