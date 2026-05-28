@@ -114,6 +114,16 @@ async function startServer() {
     { name: 'Polkadot', symbol: 'DOT', color: '#E6007A', address: '1DOTe600dot' }
   ];
 
+  // Mock prices for dynamic limits in USD: 1 Coin = X USD
+  const cryptoPrices: Record<string, number> = {
+    BTC: 65000, ETH: 3500, USDT: 1, SOL: 150, DOGE: 0.15, LTC: 80, TRX: 0.12, BNB: 600, XRP: 0.5, MATIC: 0.7, TON: 6, ADA: 0.45, BCH: 450, DASH: 35, DGB: 0.01, FEY: 0.001, LINK: 15, DOT: 7
+  };
+
+  const getLimits = (symbol: string) => {
+    const price = cryptoPrices[symbol] || 1;
+    return { min: 5 / price, max: 5000 / price };
+  };
+
   let withdrawalRequests: any[] = [];
   let depositRequests: any[] = [];
   let userNotifications: any[] = [];

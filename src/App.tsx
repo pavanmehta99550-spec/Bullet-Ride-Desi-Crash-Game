@@ -17,6 +17,7 @@ import {
 import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
+import { SearchableCoinDropdown } from './components/SearchableCoinDropdown';
 import { audioManager } from './lib/audio';
 
 interface GameHistory {
@@ -186,8 +187,19 @@ export default function App() {
   useEffect(() => { hasCashedOutRef.current = hasCashedOut; }, [hasCashedOut]);
   useEffect(() => { activeCoinRef.current = activeCoin; }, [activeCoin]);
 
-  // Note: multiplierPoints are dynamically synced inside updateMultiplier and handleGameUpdate 
-  // to avoid overhead of a useEffect listening to high-frequency state updates.
+  const handleCoinChange = async (symbol: string) => {
+    setActiveCoin(symbol);
+    const bal = coinBalances[symbol] || 0;
+    setBalance(bal);
+    try {
+      if (user) {
+        const userRef = doc(db, 'users', user.uid);
+        await setDoc(userRef, { activeCoin: symbol, walletBalance: bal }, { merge: true });
+      }
+    } catch (err) {
+      console.warn("Failed saving activeCoin preference:", err);
+    }
+  };
 
   const fetchCoins = async () => {
     try {
@@ -2384,27 +2396,7 @@ export default function App() {
                     <p className="text-xs font-black text-red-500 uppercase italic animate-pulse">Low Fuel! Please Deposit</p>
                   )}
                 </div>
-                <select
-                  value={activeCoin}
-                  onChange={async (e) => {
-                    const selectedSym = e.target.value;
-                    setActiveCoin(selectedSym);
-                    const bal = coinBalances[selectedSym] || 0;
-                    setBalance(bal);
-                    try {
-                      const userRef = doc(db, 'users', user.uid);
-                      await setDoc(userRef, { activeCoin: selectedSym, walletBalance: bal }, { merge: true });
-                    } catch (err) {
-                      console.warn("Failed saving activeCoin preference:", err);
-                    }
-                  }}
-                  className="bg-black/60 border border-zinc-800 text-zinc-300 font-bold font-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded cursor-pointer hover:border-zinc-700 outline-none"
-                >
-                  <option value="INR" style={{ color: '#FFD700' }}>₹ INR</option>
-                  {coins.map(c => (
-                    <option key={c.symbol} value={c.symbol} style={{ color: c.color }}>{c.symbol}</option>
-                  ))}
-                </select>
+                <SearchableCoinDropdown coins={coins} activeCoin={activeCoin} onChange={handleCoinChange} />
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex flex-col items-end">
