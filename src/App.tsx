@@ -92,6 +92,8 @@ export default function App() {
 
   // Admin promocodes management state
   const [adminPromocodes, setAdminPromocodes] = useState<any[]>([]);
+  const [adminPromocodesHistory, setAdminPromocodesHistory] = useState<any[]>([]);
+  const [adminPromoRedemptions, setAdminPromoRedemptions] = useState<any[]>([]);
   const [isPromocodesLoading, setIsPromocodesLoading] = useState(false);
   const [newPromoCode, setNewPromoCode] = useState('');
   const [newPromoReward, setNewPromoReward] = useState('500');
@@ -1388,6 +1390,22 @@ export default function App() {
       if (Array.isArray(data)) {
         setAdminPromocodes(data);
       }
+      try {
+        const historyData = await safeFetchJson('/api/admin/promocodes-history');
+        if (Array.isArray(historyData)) {
+          setAdminPromocodesHistory(historyData);
+        }
+      } catch (hErr) {
+        console.warn("History fetch failed:", hErr);
+      }
+      try {
+        const redemptionsData = await safeFetchJson('/api/admin/promo-redemptions');
+        if (Array.isArray(redemptionsData)) {
+          setAdminPromoRedemptions(redemptionsData);
+        }
+      } catch (rErr) {
+        console.warn("Redemptions log fetch failed:", rErr);
+      }
     } catch (err: any) {
       console.warn("Load promocodes failed:", err.message || err);
     } finally {
@@ -1404,6 +1422,12 @@ export default function App() {
       });
       showAdminStatus(data.message || "Promo codes saved! ✅");
       setAdminPromocodes(updatedCodes);
+      try {
+        const historyData = await safeFetchJson('/api/admin/promocodes-history');
+        if (Array.isArray(historyData)) {
+          setAdminPromocodesHistory(historyData);
+        }
+      } catch (_) {}
     } catch (err: any) {
       console.error("Save promocodes failed:", err);
       showAdminStatus("Failed to save promo codes: " + (err.message || String(err)), 'error');
@@ -1916,6 +1940,99 @@ export default function App() {
                               </tbody>
                             </table>
                           )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Promo Codes History Log & Redemption History Panel */}
+                  <div className="mt-8 pt-6 border-t border-zinc-800 space-y-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Left Side: Creation History of all codes ever made */}
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-zinc-400 font-bold text-xs uppercase tracking-widest flex items-center gap-1.5">
+                            <History className="w-3.5 h-3.5 text-blue-400 animate-spin-slow" />
+                            <span>📜 Created Codes History (प्रमो कोड्स इतिहास - निर्माण)</span>
+                          </h4>
+                          <span className="text-[9px] text-blue-400 bg-blue-400/10 border border-blue-400/20 px-2.5 py-0.5 rounded font-bold uppercase tracking-widest">
+                            {adminPromocodesHistory.length} Total Made
+                          </span>
+                        </div>
+                        <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+                          <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                            <table className="w-full text-left text-[11px]">
+                              <thead className="bg-black text-zinc-400 uppercase text-[9px] tracking-wider font-bold">
+                                <tr>
+                                  <th className="p-3 border-b border-zinc-800">Code Name</th>
+                                  <th className="p-3 border-b border-zinc-800">Reward</th>
+                                  <th className="p-3 border-b border-zinc-800">Max Limit</th>
+                                  <th className="p-3 border-b border-zinc-800 text-right">Created At</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-900">
+                                {adminPromocodesHistory.map((hCode) => (
+                                  <tr key={hCode.code + hCode.createdAt} className="hover:bg-white/5 transition-colors">
+                                    <td className="p-3 font-mono font-black text-white">{hCode.code}</td>
+                                    <td className="p-3 text-emerald-400 font-bold">₹{hCode.reward}</td>
+                                    <td className="p-3 text-zinc-400">{hCode.maxUses || '1000'}</td>
+                                    <td className="p-3 text-zinc-500 font-mono text-right text-[10px]">
+                                      {new Date(hCode.createdAt).toLocaleString('en-IN', { timeZone: 'IST' })}
+                                    </td>
+                                  </tr>
+                                ))}
+                                {adminPromocodesHistory.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="p-8 text-center text-zinc-550 italic">No static promocodes logged. Codes you make will appear here!</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Side: Redemption Log */}
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-zinc-400 font-bold text-xs uppercase tracking-widest flex items-center gap-1.5">
+                            <Gift className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                            <span>📈 Claim / Redemption History (किस यूज़र ने दावा किया)</span>
+                          </h4>
+                          <span className="text-[9px] text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-2.5 py-0.5 rounded font-bold uppercase tracking-widest">
+                            {adminPromoRedemptions.length} Claimed
+                          </span>
+                        </div>
+                        <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+                          <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                            <table className="w-full text-left text-[11px]">
+                              <thead className="bg-black text-zinc-400 uppercase text-[9px] tracking-wider font-bold">
+                                <tr>
+                                  <th className="p-3 border-b border-zinc-800">User Email</th>
+                                  <th className="p-3 border-b border-zinc-800">Code Used</th>
+                                  <th className="p-3 border-b border-zinc-800">Claimed Amount</th>
+                                  <th className="p-3 border-b border-zinc-800 text-right">Redeemed On</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-900">
+                                {adminPromoRedemptions.map((log) => (
+                                  <tr key={log.id} className="hover:bg-white/5 transition-colors">
+                                    <td className="p-3 text-white truncate max-w-[150px]" title={log.userEmail}>{log.userEmail}</td>
+                                    <td className="p-3 font-mono font-black text-[#FFD700]">{log.code}</td>
+                                    <td className="p-3 font-mono text-emerald-400 font-bold">₹{log.reward}</td>
+                                    <td className="p-3 text-zinc-500 font-mono text-right text-[10px]">
+                                      {new Date(log.timestamp).toLocaleString('en-IN', { timeZone: 'IST' })}
+                                    </td>
+                                  </tr>
+                                ))}
+                                {adminPromoRedemptions.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="p-8 text-center text-zinc-550 italic">No claims processed yet. Claims display here in real time!</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
                     </div>

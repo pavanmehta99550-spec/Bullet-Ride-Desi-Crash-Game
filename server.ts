@@ -122,6 +122,12 @@ async function startServer() {
     { code: "RIDER100", reward: 100, uses: 0, maxUses: 1000, usedBy: [] },
     { code: "START777", reward: 777, uses: 0, maxUses: 500, usedBy: [] }
   ];
+  let promocodeHistory: any[] = [
+    { code: "FREE500", reward: 500, maxUses: 1000, createdAt: "2026-05-28T08:00:00Z" },
+    { code: "RIDER100", reward: 100, maxUses: 1000, createdAt: "2026-05-28T08:15:00Z" },
+    { code: "START777", reward: 777, maxUses: 500, createdAt: "2026-05-28T08:30:00Z" }
+  ];
+  let promoRedemptions: any[] = [];
   // -----------------------------------------------------------------
 
   app.use(express.json());
@@ -139,6 +145,8 @@ async function startServer() {
         const snapData = snapshot.data();
         if (snapData?.cryptoCoins) cryptoCoins = snapData.cryptoCoins;
         if (snapData?.promocodes && Array.isArray(snapData.promocodes)) promocodes = snapData.promocodes;
+        if (snapData?.promocodeHistory && Array.isArray(snapData.promocodeHistory)) promocodeHistory = snapData.promocodeHistory;
+        if (snapData?.promoRedemptions && Array.isArray(snapData.promoRedemptions)) promoRedemptions = snapData.promoRedemptions;
       }
     }).catch(console.error);
 
@@ -510,19 +518,27 @@ async function startServer() {
         return res.status(400).json({ error: "Aap pehle hi yeh promocode use kar chuke hain! 🛑" });
       }
 
-      // Update user bonus balance in Database
+      // Update user bonus balance in Database and fetch their email
       let newBonusVal = promo.reward;
+      let userEmail = "";
       if (db) {
-        const userRef = doc(db, "users", userId);
-        const userSnap = await getDoc(userRef);
-        const currentBonus = userSnap.exists() ? (userSnap.data()?.bonus_balance || 0) : 0;
-        newBonusVal = currentBonus + promo.reward;
-        
-        await setDoc(userRef, { 
-          uid: userId, 
-          bonus_balance: newBonusVal,
-          updatedAt: serverTimestamp() 
-        }, { merge: true });
+        try {
+          const userRef = doc(db, "users", userId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            const currentBonus = userData?.bonus_balance || 0;
+            userEmail = userData?.email || "User";
+            newBonusVal = currentBonus + promo.reward;
+          }
+          await setDoc(doc(db, "users", userId), { 
+            uid: userId, 
+            bonus_balance: newBonusVal,
+            updatedAt: serverTimestamp() 
+          }, { merge: true });
+        } catch (dbErr: any) {
+          console.error("[SERVER] Failed to fetch or update user doc during redeem:", dbErr.message);
+        }
       }
 
       // Record use
@@ -530,12 +546,23 @@ async function startServer() {
       promo.usedBy.push(userId);
       promo.uses += 1;
 
-      // Save updated promo codes array to Firestore Settings
+      // Log redemption details
+      const redemptionEntry = {
+        id: `redeem_${Date.now()}_${userId}`,
+        code: inputCode,
+        userId,
+        userEmail: userEmail || "User",
+        reward: promo.reward,
+        timestamp: new Date().toISOString()
+      };
+      promoRedemptions.push(redemptionEntry);
+
+      // Save updated promo codes array and redemptions to Firestore Settings
       if (db) {
         try {
-          await setDoc(doc(db, 'admin', 'settings'), { promocodes, updatedAt: serverTimestamp() }, { merge: true });
+          await setDoc(doc(db, 'admin', 'settings'), { promocodes, promoRedemptions, updatedAt: serverTimestamp() }, { merge: true });
         } catch (dbErr: any) {
-          console.error("[SERVER] Failed to save updated promocodes to Firestore Settings:", dbErr.message);
+          console.error("[SERVER] Failed to save updated promocodes/redemptions to Firestore Settings:", dbErr.message);
         }
       }
 
@@ -574,10 +601,31 @@ async function startServer() {
     res.json(promocodes);
   });
 
+  app.get("/api/admin/promocodes-history", (req, res) => {
+    res.json(promocodeHistory);
+  });
+
+  app.get("/api/admin/promo-redemptions", (req, res) => {
+    res.json(promoRedemptions);
+  });
+
   app.post("/api/admin/set-promocodes", async (req, res) => {
     try {
       const { codes } = req.body;
       if (codes && Array.isArray(codes)) {
+        // Track history of codes that were made (detect any newly added code)
+        for (const c of codes) {
+          const uCode = String(c.code).trim().toUpperCase();
+          if (!promocodeHistory.some(ph => ph.code.toUpperCase() === uCode)) {
+            promocodeHistory.unshift({
+              code: uCode,
+              reward: parseFloat(c.reward) || 0,
+              maxUses: c.maxUses ? parseInt(c.maxUses) : 1000,
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+
         // Normalize codes: ensure keys have code, reward, uses, maxUses, usedBy
         promocodes = codes.map((c: any) => ({
           code: String(c.code).trim().toUpperCase(),
@@ -589,9 +637,9 @@ async function startServer() {
 
         if (db) {
           try {
-            await setDoc(doc(db, 'admin', 'settings'), { promocodes, updatedAt: serverTimestamp() }, { merge: true });
+            await setDoc(doc(db, 'admin', 'settings'), { promocodes, promocodeHistory, updatedAt: serverTimestamp() }, { merge: true });
           } catch (dbErr: any) {
-            console.error("[SERVER] Failed to save promo codes to Firestore settings:", dbErr.message);
+            console.error("[SERVER] Failed to save promo codes/history to Firestore settings:", dbErr.message);
           }
         }
         res.json({ status: "ok", message: "Promo codes successfully saved! ✅" });
