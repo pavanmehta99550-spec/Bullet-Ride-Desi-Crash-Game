@@ -129,7 +129,7 @@ export async function syncUserProfile(user: any) {
         email: user.email,
         displayName: user.displayName || 'Player',
         walletBalance: 0, 
-        coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 },
+        coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 },
         activeCoin: 'INR',
         bonus_balance: 0,
         has_deposited: false,
@@ -210,7 +210,7 @@ export async function syncUserProfile(user: any) {
       email: user.email,
       displayName: user.displayName || 'Player',
       walletBalance: 50000,
-      coinBalances: { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500 },
+      coinBalances: { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500, LTC: 5, TRX: 100, BNB: 0.5, XRP: 500, MATIC: 300, TON: 50, ADA: 400, BCH: 1, DASH: 2, DGB: 1000, FEY: 200, LINK: 20, DOT: 30 },
       activeCoin: 'INR',
       bonus_balance: 0,
       has_deposited: false,
@@ -225,7 +225,7 @@ export async function updateUserBalance(userId: string, newBalance: number, acti
   const localKey = profileCacheKey(userId);
   
   // 1. Instant full sync to LocalStorage
-  let coinBalances: Record<string, number> = { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 };
+  let coinBalances: Record<string, number> = { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 };
   let cachedData: any = { uid: userId };
   
   const cached = localStorage.getItem(localKey);

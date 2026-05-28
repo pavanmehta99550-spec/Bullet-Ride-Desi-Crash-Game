@@ -45,11 +45,24 @@ export default function App() {
 
   const [multiplier, setMultiplier] = useState(1.00);
   const [coins, setCoins] = useState<{name: string, symbol: string, color: string, address: string}[]>([
-    { name: 'Bitcoin', symbol: 'BTC', color: '#F7931A', address: 'bc1qxy2kgdy6jr...789' },
-    { name: 'Ethereum', symbol: 'ETH', color: '#627EEA', address: '0x71C765...d897' },
-    { name: 'Tether', symbol: 'USDT', color: '#26A17B', address: '0x26A17B...e456' },
-    { name: 'Solana', symbol: 'SOL', color: '#14F195', address: '6x5d...f678' },
-    { name: 'Dogecoin', symbol: 'DOGE', color: '#C2A633', address: 'D8vB...m90l' }
+    { name: 'Bitcoin', symbol: 'BTC', color: '#F7931A', address: 'bc1qxy2kgdy6jr1789btc' },
+    { name: 'Ethereum', symbol: 'ETH', color: '#627EEA', address: '0x71C765d897eth' },
+    { name: 'Tether', symbol: 'USDT', color: '#26A17B', address: '0x26A17Be456usdt' },
+    { name: 'Solana', symbol: 'SOL', color: '#14F195', address: '6x5df678sol' },
+    { name: 'Dogecoin', symbol: 'DOGE', color: '#C2A633', address: 'D8vBm90ldoge' },
+    { name: 'Litecoin', symbol: 'LTC', color: '#345D9D', address: 'M8vAx87ultc' },
+    { name: 'Tron', symbol: 'TRX', color: '#FF0013', address: 'TYf82atrx' },
+    { name: 'Binance Coin', symbol: 'BNB', color: '#F3BA2F', address: '0xBNBf3babnb' },
+    { name: 'Ripple', symbol: 'XRP', color: '#23292F', address: 'rXRP2329xrp' },
+    { name: 'Polygon', symbol: 'MATIC', color: '#8247E5', address: '0xMATIC8247matic' },
+    { name: 'Toncoin', symbol: 'TON', color: '#0098EA', address: 'UQTON0098ton' },
+    { name: 'Cardano', symbol: 'ADA', color: '#0033AD', address: 'addr1ADA0033ada' },
+    { name: 'Bitcoin Cash', symbol: 'BCH', color: '#8DC351', address: 'bch1qBCH8dc3bch' },
+    { name: 'Dash', symbol: 'DASH', color: '#008DE4', address: 'X_DASH008ddash' },
+    { name: 'DigiByte', symbol: 'DGB', color: '#0066CC', address: 'dgb1qDGB0066dgb' },
+    { name: 'Feyorra', symbol: 'FEY', color: '#A020F0', address: '0xFEYa020fey' },
+    { name: 'Chainlink', symbol: 'LINK', color: '#2A5ADA', address: '0xLINK2a5alink' },
+    { name: 'Polkadot', symbol: 'DOT', color: '#E6007A', address: '1DOTe600dot' }
   ]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isCrashed, setIsCrashed] = useState(false);
@@ -86,7 +99,7 @@ export default function App() {
 
   const [balance, setBalance] = useState(0);
   const [activeCoin, setActiveCoin] = useState<string>('INR');
-  const [coinBalances, setCoinBalances] = useState<Record<string, number>>({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
+  const [coinBalances, setCoinBalances] = useState<Record<string, number>>({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 });
   const [withdrawableBalance, setWithdrawableBalance] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isAutoPlay, setIsAutoPlay] = useState(() => {
@@ -429,7 +442,20 @@ export default function App() {
             ETH: dBalances.ETH || 0,
             USDT: dBalances.USDT || 0,
             SOL: dBalances.SOL || 0,
-            DOGE: dBalances.DOGE || 0
+            DOGE: dBalances.DOGE || 0,
+            LTC: dBalances.LTC || 0,
+            TRX: dBalances.TRX || 0,
+            BNB: dBalances.BNB || 0,
+            XRP: dBalances.XRP || 0,
+            MATIC: dBalances.MATIC || 0,
+            TON: dBalances.TON || 0,
+            ADA: dBalances.ADA || 0,
+            BCH: dBalances.BCH || 0,
+            DASH: dBalances.DASH || 0,
+            DGB: dBalances.DGB || 0,
+            FEY: dBalances.FEY || 0,
+            LINK: dBalances.LINK || 0,
+            DOT: dBalances.DOT || 0
           };
           setActiveCoin(curActiveCoin);
           setCoinBalances(mergedBalances);
@@ -448,7 +474,7 @@ export default function App() {
         setHistory([]); // Clear history on signout
         setMyGameHistory([]); // Clear personal history on signout
         setActiveCoin('INR');
-        setCoinBalances({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 });
+        setCoinBalances({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 });
         setWithdrawableBalance(0);
         setIsBlocked(false);
 
@@ -491,7 +517,20 @@ export default function App() {
           ETH: dBalances.ETH || 0,
           USDT: dBalances.USDT || 0,
           SOL: dBalances.SOL || 0,
-          DOGE: dBalances.DOGE || 0
+          DOGE: dBalances.DOGE || 0,
+          LTC: dBalances.LTC || 0,
+          TRX: dBalances.TRX || 0,
+          BNB: dBalances.BNB || 0,
+          XRP: dBalances.XRP || 0,
+          MATIC: dBalances.MATIC || 0,
+          TON: dBalances.TON || 0,
+          ADA: dBalances.ADA || 0,
+          BCH: dBalances.BCH || 0,
+          DASH: dBalances.DASH || 0,
+          DGB: dBalances.DGB || 0,
+          FEY: dBalances.FEY || 0,
+          LINK: dBalances.LINK || 0,
+          DOT: dBalances.DOT || 0
         };
         setActiveCoin(curActiveCoin);
         setCoinBalances(mergedBalances);
@@ -657,7 +696,20 @@ export default function App() {
           ETH: dBalances.ETH || 0,
           USDT: dBalances.USDT || 0,
           SOL: dBalances.SOL || 0,
-          DOGE: dBalances.DOGE || 0
+          DOGE: dBalances.DOGE || 0,
+          LTC: dBalances.LTC || 0,
+          TRX: dBalances.TRX || 0,
+          BNB: dBalances.BNB || 0,
+          XRP: dBalances.XRP || 0,
+          MATIC: dBalances.MATIC || 0,
+          TON: dBalances.TON || 0,
+          ADA: dBalances.ADA || 0,
+          BCH: dBalances.BCH || 0,
+          DASH: dBalances.DASH || 0,
+          DGB: dBalances.DGB || 0,
+          FEY: dBalances.FEY || 0,
+          LINK: dBalances.LINK || 0,
+          DOT: dBalances.DOT || 0
         };
         setActiveCoin(curActiveCoin);
         setCoinBalances(mergedBalances);
@@ -673,7 +725,7 @@ export default function App() {
     } catch (e) {
       console.warn("Guest profile sync failed, falling back to clean local representation", e);
       // Clean default starting balances for developers/testers to have fun instantly!
-      const dBalances = { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500 };
+      const dBalances = { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500, LTC: 5, TRX: 100, BNB: 0.5, XRP: 500, MATIC: 300, TON: 50, ADA: 400, BCH: 1, DASH: 2, DGB: 1000, FEY: 200, LINK: 20, DOT: 30 };
       setUser(guestUser);
       setActiveCoin('INR');
       setCoinBalances(dBalances);
@@ -1187,7 +1239,7 @@ export default function App() {
       console.log("Attempting Firestore reset for", userId);
       await setDoc(userRef, { 
         walletBalance: 0,
-        coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0 },
+        coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 },
         activeCoin: 'INR',
         updatedAt: serverTimestamp()
       }, { merge: true });
