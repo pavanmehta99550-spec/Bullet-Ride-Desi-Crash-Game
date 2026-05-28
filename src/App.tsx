@@ -1916,31 +1916,48 @@ export default function App() {
               initial={{ scale: 0.9, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 20, opacity: 0 }}
-              className="bg-[#1A1A1A] border-2 border-[#FFD700] rounded-3xl w-full max-w-lg relative z-10 shadow-[0_0_100px_rgba(255,215,0,0.1)] overflow-hidden"
+              className="bg-[#1A1A1A] border-2 border-[#FFD700] rounded-3xl w-full max-w-lg relative z-10 shadow-[0_0_100px_rgba(255,215,0,0.15)] flex flex-col max-h-[92vh] sm:max-h-[85vh] overflow-hidden"
             >
-              <div className="p-8">
-                <div className="flex justify-between items-start mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl border-2 border-[#FFD700] overflow-hidden bg-zinc-800">
-                      {user.photoURL ? (
-                        <img src={user.photoURL} alt="profile" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-full h-full p-4 text-zinc-500" />
-                      )}
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-black italic uppercase text-white tracking-tighter">{user.displayName}</h3>
-                      <p className="text-zinc-500 text-[10px] uppercase font-bold tracking-widest">{user.email}</p>
-                    </div>
+              {/* Sticky Top Header */}
+              <div className="p-5 border-b border-zinc-800 bg-[#1A1A1A] flex justify-between items-center z-20 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black uppercase italic text-[#FFD700] tracking-wider flex items-center gap-1.5">
+                    <User className="w-4 h-4 text-[#FFD700]" />
+                    Aapka Profile
+                  </span>
+                </div>
+                <button 
+                  onClick={() => setIsProfileModalOpen(false)} 
+                  className="px-3 py-1.5 bg-zinc-800 text-[#FFD700] hover:text-white font-black uppercase italic text-[10px] skew-x-[-12deg] border border-zinc-700 hover:bg-zinc-700 transition-all flex items-center gap-1 shrink-0"
+                >
+                  <span>← Back to Ride</span>
+                </button>
+              </div>
+
+              {/* Scrollable central content area to fit any screen height */}
+              <div className="p-6 md:p-8 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                
+                {/* User avatar and basic info */}
+                <div className="flex items-center gap-4 bg-black/30 p-4 rounded-2xl border border-zinc-800/80">
+                  <div className="w-14 h-14 rounded-2xl border-2 border-[#FFD700] overflow-hidden bg-zinc-800 shrink-0">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="profile" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-full h-full p-3.5 text-zinc-500" />
+                    )}
                   </div>
-                  <button onClick={() => setIsProfileModalOpen(false)} className="text-zinc-500 hover:text-white bg-zinc-800/50 p-2 rounded-full">✕</button>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-xl font-black italic uppercase text-white tracking-tighter truncate">{user.displayName}</h3>
+                    <p className="text-zinc-500 text-[10px] uppercase font-bold tracking-widest truncate">{user.email}</p>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                {/* Balance & Stats Grid */}
+                <div className="grid grid-cols-2 gap-3">
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Fuel Balance</p>
                     {coinBalances[activeCoin] > 0 ? (
-                      <p className="text-xl font-mono text-[#FFD700] truncate">
+                      <p className="text-lg font-mono text-[#FFD700] truncate">
                         {activeCoin === 'INR' ? '₹' : ''}
                         {coinBalances[activeCoin].toLocaleString(undefined, { 
                           minimumFractionDigits: activeCoin === 'INR' ? 2 : 4,
@@ -1954,14 +1971,14 @@ export default function App() {
                   </div>
                   <div className="bg-black/40 border border-zinc-800 p-4 rounded-2xl">
                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Total Rides</p>
-                    <p className="text-xl font-mono text-white">{history.length}</p>
+                    <p className="text-lg font-mono text-white">{history.length}</p>
                   </div>
                   <div className="bg-[#1A1300] border border-[#FFD700]/30 p-4 rounded-2xl">
                     <p className="text-[10px] font-bold text-[#FFD700]/70 uppercase tracking-widest mb-1 flex items-center gap-1">
                       <span>Promo Bonus</span>
                       <span className="text-[#FFD700]">🎁</span>
                     </p>
-                    <p className="text-xl font-mono text-[#FFD700] font-black">{bonusBalance} pts</p>
+                    <p className="text-lg font-mono text-[#FFD700] font-black">{bonusBalance} pts</p>
                   </div>
                   <div className={`p-4 rounded-2xl border ${hasDeposited ? 'bg-emerald-950/20 border-emerald-500/20' : 'bg-amber-950/20 border-amber-500/20'}`}>
                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Withdrawals</p>
@@ -1978,7 +1995,7 @@ export default function App() {
                 </div>
 
                 {/* Referral Link & Dashboard Widget */}
-                <div className="bg-[#121212]/90 border border-[#FFD700]/20 rounded-2xl p-4 mb-6 relative overflow-hidden">
+                <div className="bg-[#121212]/90 border border-[#FFD700]/20 rounded-2xl p-4 relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-3 opacity-10">
                     <Gift className="w-12 h-12 text-[#FFD700]" />
                   </div>
@@ -2025,19 +2042,20 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl mb-6 flex justify-between items-center px-4">
+                <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl flex justify-between items-center px-4">
                    <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Admin Access Key (UID)</p>
                    <p className="text-[9px] font-mono text-zinc-500 select-all">{user?.uid}</p>
                 </div>
 
-                <div className="space-y-4">
+                {/* Ride History */}
+                <div className="space-y-3">
                   <h4 className="text-xs font-black uppercase italic text-[#FFD700] tracking-widest flex items-center gap-2">
                     <History className="w-4 h-4" />
                     Recent Ride History
                   </h4>
                   <div className="bg-black/40 border border-zinc-800 rounded-2xl overflow-hidden">
                     {history.length > 0 ? (
-                      <div className="max-h-48 overflow-y-auto">
+                      <div className="max-h-36 overflow-y-auto">
                         <table className="w-full text-left text-xs">
                           <thead className="bg-zinc-900 text-zinc-500 uppercase">
                             <tr>
@@ -2058,30 +2076,41 @@ export default function App() {
                         </table>
                       </div>
                     ) : (
-                      <div className="p-8 text-center">
+                      <div className="p-6 text-center">
                         <p className="text-zinc-600 text-xs italic">No rides yet. Start your engine!</p>
                       </div>
                     )}
                   </div>
                 </div>
+              </div>
 
-                  {user?.uid === "TUMHARI_ADMIN_UID" && (
-                    <button 
-                      onClick={() => { setIsProfileModalOpen(false); setShowAdmin(true); }}
-                      className="flex-1 py-4 bg-zinc-800 text-[#FFD700] font-black uppercase italic rounded-2xl hover:bg-zinc-700 transition-all border border-[#FFD700]/30 flex items-center justify-center gap-2"
-                    >
-                      <User className="w-5 h-5" />
-                      Admin Panel
-                    </button>
-                  )}
+              {/* Sticky bottom Footer containing the home routing button */}
+              <div className="p-5 border-t border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md flex flex-col sm:flex-row gap-2.5 z-20 shrink-0">
+                <button 
+                  onClick={() => setIsProfileModalOpen(false)} 
+                  className="flex-1 py-3.5 bg-[#FFD700] text-black font-black uppercase italic rounded-2xl hover:bg-[#FFD700]/80 transition-all text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,215,0,0.15)] order-first sm:order-none"
+                >
+                  <span>Home Screen Par Jayein 🏠</span>
+                </button>
+                
+                {user?.uid === "TUMHARI_ADMIN_UID" && (
                   <button 
-                    onClick={() => { setIsProfileModalOpen(false); signOut(auth); }}
-                    className="flex-1 py-4 bg-red-600/10 border border-red-600/20 text-red-500 font-black uppercase italic rounded-2xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2"
+                    onClick={() => { setIsProfileModalOpen(false); setShowAdmin(true); }}
+                    className="py-3 px-4 bg-zinc-800 text-[#FFD700] font-black uppercase italic rounded-2xl hover:bg-zinc-700 transition-all border border-[#FFD700]/30 flex items-center justify-center gap-2 text-xs font-black"
                   >
-                    <LogOut className="w-5 h-5" />
-                    Logout
+                    <User className="w-4 h-4" />
+                    Admin
                   </button>
-                </div>
+                )}
+
+                <button 
+                  onClick={() => { setIsProfileModalOpen(false); signOut(auth); }}
+                  className="py-3 px-4 bg-red-600/10 border border-red-600/20 text-red-500 font-black uppercase italic rounded-2xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2 text-xs font-black"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
