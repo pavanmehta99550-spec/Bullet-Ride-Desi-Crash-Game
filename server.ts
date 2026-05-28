@@ -143,7 +143,21 @@ async function startServer() {
     getDoc(doc(db, 'admin', 'settings')).then(snapshot => {
       if (snapshot.exists()) {
         const snapData = snapshot.data();
-        if (snapData?.cryptoCoins) cryptoCoins = snapData.cryptoCoins;
+        
+        // Update in-memory coins if Firestore exists, but check if we need to update Firestore instead
+        if (snapData?.cryptoCoins) {
+          if (snapData.cryptoCoins.length < cryptoCoins.length) {
+             // Firestore list is outdated, update Firestore with new full list
+             setDoc(doc(db, 'admin', 'settings'), { cryptoCoins, updatedAt: serverTimestamp() }, { merge: true }).catch(console.error);
+          } else {
+             // Firestore list is current, sync to in-memory
+             cryptoCoins = snapData.cryptoCoins;
+          }
+        } else {
+           // Firestore doesn't have coins, populate it
+           setDoc(doc(db, 'admin', 'settings'), { cryptoCoins, updatedAt: serverTimestamp() }, { merge: true }).catch(console.error);
+        }
+        
         if (snapData?.promocodes && Array.isArray(snapData.promocodes)) promocodes = snapData.promocodes;
         if (snapData?.promocodeHistory && Array.isArray(snapData.promocodeHistory)) promocodeHistory = snapData.promocodeHistory;
         if (snapData?.promoRedemptions && Array.isArray(snapData.promoRedemptions)) promoRedemptions = snapData.promoRedemptions;
