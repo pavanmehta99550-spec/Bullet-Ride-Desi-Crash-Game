@@ -611,6 +611,46 @@ async function startServer() {
     }
   });
 
+  app.post("/api/user/place-bet", async (req, res) => {
+    try {
+      const { userId, betAmount, coinSymbol } = req.body;
+      if (!userId || !betAmount || !coinSymbol) {
+        return res.status(400).json({ error: "Invalid bet request" });
+      }
+
+      if (db) {
+        const userRef = doc(db, "users", userId);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) return res.status(404).json({ error: "User not found" });
+
+        const userData = userSnap.data();
+        const coinBalances = userData.coinBalances || {};
+        const currentBalance = coinBalances[coinSymbol] || 0;
+
+        if (currentBalance < parseFloat(betAmount)) {
+          return res.status(400).json({ error: "Insufficient balance" });
+        }
+
+        // Deduct
+        coinBalances[coinSymbol] = currentBalance - parseFloat(betAmount);
+        await setDoc(userRef, { coinBalances, updatedAt: serverTimestamp() }, { merge: true });
+        
+        // Log transaction (simplified for now)
+        await setDoc(doc(collection(db, "transactions")), {
+          userId,
+          type: `BET_${coinSymbol}`,
+          amount: parseFloat(betAmount),
+          timestamp: serverTimestamp()
+        });
+      }
+
+      res.json({ status: "ok" });
+    } catch (err: any) {
+      console.error("[SERVER] Place bet error:", err);
+      res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
+
   app.get("/api/admin/promocodes", (req, res) => {
     res.json(promocodes);
   });
