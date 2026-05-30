@@ -29,6 +29,7 @@ interface GameHistory {
 }
 
 async function safeFetchJson<T = any>(url: string, options?: RequestInit): Promise<T> {
+  console.log(`[CLIENT] Fetching: ${url}`);
   const res = await fetch(url, options);
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
