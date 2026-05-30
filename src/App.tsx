@@ -28,9 +28,12 @@ interface GameHistory {
   time: string;
 }
 
+const BACKEND_API_URL = "https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app";
+
 async function safeFetchJson<T = any>(url: string, options?: RequestInit): Promise<T> {
-  console.log(`[CLIENT] Fetching: ${url}`);
-  const res = await fetch(url, options);
+  const fullUrl = url.startsWith('/') ? `https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app${url}` : url;
+  console.log(`[CLIENT] Fetching: ${fullUrl}`);
+  const res = await fetch(fullUrl, options);
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   }
