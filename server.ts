@@ -157,7 +157,14 @@ async function startServer() {
     
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Baggage, Sentry-Trace");
+    
+    // Reflect any requested access-coontrol headers dynamically to prevent any blocking by diagnostic/security frameworks (Sentry, Vercel diagnostics)
+    const requestHeaders = req.headers["access-control-request-headers"];
+    if (requestHeaders) {
+      res.setHeader("Access-Control-Allow-Headers", requestHeaders);
+    } else {
+      res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Baggage, Sentry-Trace");
+    }
     
     // Check if the request is an OPTIONS preflight request
     if (req.method === "OPTIONS") {

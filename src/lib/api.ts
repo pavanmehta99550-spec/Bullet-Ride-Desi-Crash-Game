@@ -68,6 +68,11 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
       if (response.status === 502 || response.status === 503 || response.status === 552) {
         throw new Error(`Instance unresponsive (${response.status})`);
       }
+      // If the primary backend returns 404 on an API route, the endpoint might not exist on this unpromoted or stale instance.
+      // Triggering auto-failover/auto-healing allows the client to fall back to the updated instance.
+      if (response.status === 404 && !userCustomBackend) {
+        throw new Error(`Endpoint not found (404) on current backend`);
+      }
       return response;
     } catch (err) {
       console.warn(`[CUSTOM FETCH] Failed to connect to primary backend: ${primaryUrl}. Trying backends fallback...`, err);
@@ -92,7 +97,8 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
 
         try {
           const response = await fetch(fbInput, init);
-          if (response.ok || (response.status >= 200 && response.status < 500)) {
+          // Exclude 404 since it means the endpoint is also missing on this fallback
+          if (response.ok || (response.status >= 200 && response.status < 500 && response.status !== 404)) {
             console.log(`[CUSTOM FETCH] Auto-healing success! Switched to: ${fallbackBackend}`);
             cachedWorkingBackend = fallbackBackend;
             if (typeof window !== "undefined") {
@@ -120,4 +126,15 @@ export const safeFetchJson = async <T = any>(url: string, options?: RequestInit)
     throw new Error(`Non-JSON response received`);
   }
   return await res.json();
+};
+
+export const getActiveBackendUrl = (): string => {
+  if (typeof window === "undefined" || !window.location) return getBackendUrl();
+  const customUrl = localStorage.getItem("CUSTOM_BACKEND_URL");
+  if (customUrl) return customUrl;
+  
+  const cached = localStorage.getItem("CACHED_WORKING_BACKEND_URL");
+  if (cached) return cached;
+  
+  return getBackendUrl();
 };

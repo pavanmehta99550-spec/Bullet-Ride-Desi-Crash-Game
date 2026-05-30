@@ -28,7 +28,7 @@ interface GameHistory {
   time: string;
 }
 
-import { customFetch as fetch, safeFetchJson, getBackendUrl } from './lib/api';
+import { customFetch as fetch, safeFetchJson, getBackendUrl, getActiveBackendUrl } from './lib/api';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -2502,7 +2502,7 @@ export default function App() {
                       </div>
                       <div className="bg-black/60 p-2.5 rounded border border-zinc-850 mt-2">
                         <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-black">Active Endpoint Origin:</div>
-                        <div className="text-[11px] text-[#FFD700] font-mono break-all font-semibold select-all mt-1">{getBackendUrl()}</div>
+                        <div className="text-[11px] text-[#FFD700] font-mono break-all font-semibold select-all mt-1">{getActiveBackendUrl()}</div>
                       </div>
                     </div>
                   </div>
