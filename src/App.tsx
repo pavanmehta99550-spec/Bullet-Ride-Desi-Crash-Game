@@ -3352,7 +3352,6 @@ export default function App() {
                           }).join(' L ')}`}
                           fill="none"
                           stroke={isCrashed ? "#EF4444" : "#FFD700"}
-                          strokeWidth="3.5"
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           vectorEffect="non-scaling-stroke"
@@ -3376,24 +3375,24 @@ export default function App() {
                     >
                       <div className="relative">
                          {/* Floating Multiplier Badge */}
-                         <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gradient-to-r from-yellow-500 to-amber-500 text-black px-2.5 py-1 rounded-lg font-black text-xs shadow-[0_4px_12px_rgba(251,191,36,0.5)] border border-yellow-300 pointer-events-none whitespace-nowrap animate-pulse flex items-center gap-1">
-                           <span>🏍️</span>
-                           <span>{lastY.toFixed(2)}x</span>
+                         <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-[#FFD700]/90 backdrop-blur-md text-black px-4 py-1.5 rounded-full font-black text-sm shadow-[0_0_20px_rgba(255,215,0,0.6)] border-2 border-white/20 pointer-events-none whitespace-nowrap flex items-center gap-1.5">
+                           <span className="text-lg">🏍️</span>
+                           <span className="tabular-nums tracking-tighter">{lastY.toFixed(2)}x</span>
                          </div>
                       
                          {/* Bike Tilt Effect based on growth speed */}
                          <motion.div
                           animate={{ 
                               rotate: [-5, -15, -5],
-                              y: [0, -4, 0]
+                              y: [0, -6, 0]
                           }}
                           transition={{ 
-                              duration: 0.2, 
+                              duration: 0.3, 
                               repeat: Infinity,
                               ease: "easeInOut"
                           }}
                          >
-                          <Bike className="w-12 h-12 text-[#FFD700] drop-shadow-[0_0_20px_rgba(255,215,0,0.8)]" />
+                          <Bike className="w-14 h-14 text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] filter brightness-125" />
                          </motion.div>
         
                          {/* Exhaust Flames/Smoke */}
@@ -3500,7 +3499,7 @@ export default function App() {
         </section>
 
         {/* Right Side Panel: Controls */}
-        <aside className="w-full md:w-80 bg-[#1A1A1A] p-6 flex flex-col gap-6 border-l border-[#333]">
+        <aside className="w-full md:w-80 bg-[#1A1A1A] p-6 flex flex-col gap-6 border-l border-[#333] max-h-screen overflow-y-auto">
           <div className="space-y-4">
             <div className="flex justify-between items-end mb-2">
               <label className="text-[10px] uppercase font-bold text-[#888]">Riding Stake</label>

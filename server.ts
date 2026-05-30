@@ -250,17 +250,21 @@ async function startServer() {
   app.post("/api/admin/set-crypto", async (req, res) => {
     try {
       const { coins } = req.body;
+      console.log("[SERVER] Received coins:", JSON.stringify(coins));
       if (coins && Array.isArray(coins)) {
         cryptoCoins = coins;
+        console.log("[SERVER] Saving", coins.length, "coins to Firestore");
         if (db) {
           try {
             await setDoc(doc(db, 'admin', 'settings'), { cryptoCoins: coins, updatedAt: serverTimestamp() }, { merge: true });
+            console.log("[SERVER] Saved to Firestore successfully");
           } catch (dbErr: any) {
-            console.error("[SERVER] Failed to save cryptoCoins to Firestore, continuing with in-memory:", dbErr.message);
+            console.error("[SERVER] Failed to save to Firestore:", dbErr);
           }
         }
         res.json({ status: "ok", message: "Crypto addresses saved! ✅" });
       } else {
+        console.error("[SERVER] Invalid coins data. Received:", typeof coins, coins);
         res.status(400).json({ error: "Invalid coins data" });
       }
     } catch (err: any) {
