@@ -2774,7 +2774,7 @@ export default function App() {
               </div>
 
               {!selectedCoin ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4">
                   {coins.map((coin) => (
                     <button 
                       key={coin.symbol}
