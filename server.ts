@@ -142,6 +142,16 @@ async function startServer() {
   // -----------------------------------------------------------------
 
   app.use(express.json());
+  
+  app.use((req, res, next) => {
+    console.log(`[GLOBAL REQUEST] ${req.method} ${req.url}`);
+    next();
+  });
+  
+  app.use("/api/*", (req, res, next) => {
+    console.log(`[API REQUEST] ${req.method} ${req.url}`);
+    next();
+  });
 
   // Health Check
   app.get("/api/health", (req, res) => {
@@ -247,7 +257,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/save-crypto", async (req, res) => {
+  app.all("/api/admin/save-crypto", async (req, res) => {
     try {
       const { coins } = req.body;
       console.log("[SERVER] Received coins:", JSON.stringify(coins));
