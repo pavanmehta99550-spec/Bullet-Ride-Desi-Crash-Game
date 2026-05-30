@@ -3,15 +3,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Mail, Lock, Chrome, Loader2, X, AlertCircle, 
   UserPlus, LogIn, ChevronRight, CheckCircle2, User,
-  Settings, Save, RotateCcw, HelpCircle
+  HelpCircle
 } from 'lucide-react';
 import { 
-  auth, googleProvider, firebaseConfig 
+  auth, googleProvider, firebaseConfig, db
 } from '../lib/firebase';
 import { 
   signInWithPopup, signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, updateProfile 
+  createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail 
 } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -20,50 +21,30 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalProps) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot-password'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDomainError, setIsDomainError] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  // Custom Developer Firebase Config states
-  const [showDevSettings, setShowDevSettings] = useState(false);
-  const [devApiKey, setDevApiKey] = useState(firebaseConfig.apiKey || '');
-  const [devAuthDomain, setDevAuthDomain] = useState(firebaseConfig.authDomain || '');
-  const [devProjectId, setDevProjectId] = useState(firebaseConfig.projectId || '');
-  const [devStorageBucket, setDevStorageBucket] = useState(firebaseConfig.storageBucket || '');
-  const [devMessagingSenderId, setDevMessagingSenderId] = useState(firebaseConfig.messagingSenderId || '');
-  const [devAppId, setDevAppId] = useState(firebaseConfig.appId || '');
-  const [devDatabaseId, setDevDatabaseId] = useState(firebaseConfig.firestoreDatabaseId || '');
-  const [saveSuccess, setSaveSuccess] = useState(false);
-
-  const handleSaveDevConfig = (e: FormEvent) => {
+  const handleForgotPassword = async (e: FormEvent) => {
     e.preventDefault();
-    const newConfig = {
-      apiKey: devApiKey.trim(),
-      authDomain: devAuthDomain.trim(),
-      projectId: devProjectId.trim(),
-      storageBucket: devStorageBucket.trim(),
-      messagingSenderId: devMessagingSenderId.trim(),
-      appId: devAppId.trim(),
-      firestoreDatabaseId: devDatabaseId.trim(),
-    };
-    localStorage.setItem('custom_firebase_config_v2', JSON.stringify(newConfig));
-    setSaveSuccess(true);
-    setTimeout(() => {
-      window.location.reload();
-    }, 1200);
-  };
-
-  const handleResetDevConfig = () => {
-    localStorage.removeItem('custom_firebase_config_v2');
-    setSaveSuccess(true);
-    setTimeout(() => {
-      window.location.reload();
-    }, 1200);
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await sendPasswordResetEmail(auth, forgotPasswordEmail);
+      setSuccess("Password reset email sent! Check your inbox.");
+    } catch (err: any) {
+      setError(`Failed to send reset email: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDemoOrGuestLogin = async () => {
@@ -141,6 +122,19 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
       if (mode === 'signup') {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(userCredential.user, { displayName: name });
+        // Manually create/update user doc with our name to avoid syncUserProfile race condition
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+            uid: userCredential.user.uid,
+            email: userCredential.user.email,
+            displayName: name,
+            walletBalance: 0,
+            coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 },
+            activeCoin: 'INR',
+            bonus_balance: 0,
+            has_deposited: false,
+            referralCode: userCredential.user.uid,
+            createdAt: Date.now(),
+        }, { merge: true });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
@@ -184,10 +178,10 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
             <div className="p-6 md:p-8 border-b border-zinc-800/50 flex justify-between items-start">
               <div>
                 <h3 className="text-2xl md:text-3xl font-black italic uppercase text-[#FFD700]">
-                  {mode === 'login' ? 'Welcome Back' : 'Join the Ride'}
+                  {mode === 'login' ? 'Welcome Back' : mode === 'signup' ? 'Join the Ride' : 'Reset Password'}
                 </h3>
                 <p className="text-zinc-500 text-[10px] md:text-xs mt-1 uppercase tracking-widest font-bold">
-                  {mode === 'login' ? 'Sign in to fuel up' : 'Create your racing profile'}
+                  {mode === 'login' ? 'Sign in to fuel up' : mode === 'signup' ? 'Create your racing profile' : 'Recover your account'}
                 </p>
               </div>
               <button 
@@ -201,6 +195,16 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
+              {success && (
+                <motion.div 
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  className="mb-6 p-4 bg-emerald-600/10 border border-emerald-600/20 rounded-xl flex items-center gap-3 text-emerald-500 text-sm"
+                >
+                  <CheckCircle2 className="w-5 h-5 shrink-0" />
+                  <p>{success}</p>
+                </motion.div>
+              )}
               {error && !isDomainError && (
                 <motion.div 
                   initial={{ height: 0, opacity: 0 }}
@@ -261,6 +265,7 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
                 </motion.div>
               )}
 
+{mode !== 'forgot-password' ? (
               <form onSubmit={handleEmailAuth} className="space-y-4">
                 {mode === 'signup' && (
                   <div className="space-y-2">
@@ -307,6 +312,19 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
                       className="w-full bg-black/40 border border-zinc-800 p-4 pl-12 text-white rounded-2xl outline-none focus:border-[#FFD700] transition-colors font-medium text-sm md:text-base"
                     />
                   </div>
+                  {mode === 'login' && (
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setMode('forgot-password');
+                        setError(null);
+                        setSuccess(null);
+                      }}
+                      className="text-[10px] text-zinc-500 hover:text-[#FFD700] font-bold uppercase transition-colors ml-1"
+                    >
+                      Forgot Password?
+                    </button>
+                  )}
                 </div>
 
                 <button 
@@ -325,7 +343,43 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
                     </>
                   )}
                 </button>
-              </form>
+                </form>
+              ) : (
+                <form onSubmit={handleForgotPassword} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest ml-1">Email ID</label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                      <input 
+                        type="email" 
+                        placeholder="rider@example.com"
+                        value={forgotPasswordEmail}
+                        onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                        required
+                        className="w-full bg-black/40 border border-zinc-800 p-4 pl-12 text-white rounded-2xl outline-none focus:border-[#FFD700] transition-colors font-medium text-sm md:text-base"
+                      />
+                    </div>
+                  </div>
+                  <button 
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-4 bg-[#FFD700] text-black font-black uppercase italic rounded-2xl hover:bg-white transition-all shadow-[0_10px_30px_rgba(255,215,0,0.15)] flex items-center justify-center gap-2 group mt-4 h-14 md:h-16"
+                  >
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>Reset Password</span>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('login');
+                      setError(null);
+                      setSuccess(null);
+                    }}
+                    className="w-full py-3 text-zinc-600 hover:text-zinc-400 text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                  >
+                    Back to Login
+                  </button>
+                </form>
+              )}
 
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800"></div></div>
@@ -380,127 +434,6 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
                       Login Now
                     </button>
                   </p>
-                )}
-              </div>
-
-              {/* Developer Configuration Expander */}
-              <div className="mt-8 pt-6 border-t border-zinc-805/40">
-                <button
-                  type="button"
-                  onClick={() => setShowDevSettings(!showDevSettings)}
-                  className="w-full flex items-center justify-between px-4 py-3.5 bg-zinc-900 hover:bg-zinc-800/60 border border-zinc-800 rounded-2xl text-[11px] font-black uppercase tracking-widest text-[#FFD700] transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <Settings className="w-4 h-4 text-[#FFD700]" />
-                    <span>🛠️ Custom Firebase Config (उन्नत सेटिंग्स)</span>
-                  </span>
-                  <span className="text-zinc-500 font-bold">{showDevSettings ? 'Collapse ▲' : 'Expand ▼'}</span>
-                </button>
-
-                {showDevSettings && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    className="mt-4 p-5 bg-black/60 border border-zinc-850 rounded-2xl space-y-4"
-                  >
-                    <div className="flex items-center justify-between text-[10px] uppercase font-black tracking-widest text-zinc-400">
-                      <span>Active Project ID:</span>
-                      <span className="text-[#FFD700] font-mono lowercase select-all bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">{firebaseConfig.projectId}</span>
-                    </div>
-                    
-                    <p className="text-zinc-400 text-[10px] leading-relaxed">
-                      यदि आपका स्वयं का Custom Domain या Firebase Project है (जैसे <code className="text-[#FFD700] bg-zinc-900 px-1 py-0.5 rounded">clipnova-f259d</code>), तो नीचे क्रेडेंशियल्स दर्ज करें ताकि Google Login सीधे काम करे।
-                    </p>
-
-                    <form onSubmit={handleSaveDevConfig} className="space-y-3">
-                      <div>
-                        <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Firebase API Key</label>
-                        <input
-                          type="text"
-                          value={devApiKey}
-                          onChange={(e) => setDevApiKey(e.target.value)}
-                          placeholder="AIzaSy..."
-                          required
-                          className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Project ID</label>
-                          <input
-                            type="text"
-                            value={devProjectId}
-                            onChange={(e) => setDevProjectId(e.target.value)}
-                            placeholder="clipnova-f259d"
-                            required
-                            className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Auth Domain</label>
-                          <input
-                            type="text"
-                            value={devAuthDomain}
-                            onChange={(e) => setDevAuthDomain(e.target.value)}
-                            placeholder="example.firebaseapp.com"
-                            required
-                            className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Storage Bucket</label>
-                          <input
-                            type="text"
-                            value={devStorageBucket}
-                            onChange={(e) => setDevStorageBucket(e.target.value)}
-                            placeholder="example.firebasestorage.app"
-                            required
-                            className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">App ID</label>
-                          <input
-                            type="text"
-                            value={devAppId}
-                            onChange={(e) => setDevAppId(e.target.value)}
-                            placeholder="1:12345:web:abcd"
-                            required
-                            className="w-full mt-1 bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-white font-mono text-xs outline-none focus:border-[#FFD700]"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2 pt-2">
-                        <button
-                          type="submit"
-                          className="flex-1 py-3 bg-[#FFD700] hover:bg-white text-black font-black uppercase text-[10px] italic rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5"
-                        >
-                          <Save className="w-3.5 h-3.5" />
-                          <span>Save & Restart 🔄</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleResetDevConfig}
-                          className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-350 font-black uppercase text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5"
-                          title="Reset to App Default"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Reset</span>
-                        </button>
-                      </div>
-
-                      {saveSuccess && (
-                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-center font-bold text-[10px] rounded-xl animate-pulse uppercase tracking-wider">
-                          🔄 Saving Firebase Keys & restarting... 🏎️
-                        </div>
-                      )}
-                    </form>
-                  </motion.div>
                 )}
               </div>
 
