@@ -81,14 +81,14 @@ if (!firebaseConfig.appId) {
 // Standard clean Firestore initialization. Re-use dbId correctly.
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+// Ensure local persistence for sign-ins
+setPersistence(auth, browserLocalPersistence).catch(console.error);
+
 const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)' 
   ? firebaseConfig.firestoreDatabaseId 
   : undefined;
 
 export const db = getFirestore(app, dbId);
-
-// Ensure local persistence for sign-ins
-setPersistence(auth, browserLocalPersistence);
 
 export const googleProvider = new GoogleAuthProvider();
 
