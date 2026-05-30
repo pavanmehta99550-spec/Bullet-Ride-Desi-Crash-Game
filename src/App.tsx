@@ -28,21 +28,7 @@ interface GameHistory {
   time: string;
 }
 
-const BACKEND_API_URL = "https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app";
-
-async function safeFetchJson<T = any>(url: string, options?: RequestInit): Promise<T> {
-  const fullUrl = url.startsWith('/') ? `https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app${url}` : url;
-  console.log(`[CLIENT] Fetching: ${fullUrl}`);
-  const res = await fetch(fullUrl, options);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-  }
-  const contentType = res.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    throw new Error(`Non-JSON response received`);
-  }
-  return await res.json();
-}
+import { customFetch as fetch, safeFetchJson } from './lib/api';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -271,12 +257,18 @@ export default function App() {
     fetchCryptoLimits();
     fetchRates();
 
-    // Subscribe to Firestore settings for real-time crypto config/addresses sync
+    // Subscribe to Firestore settings for real-time crypto config/addresses & admin passcode sync
     const unsubCoins = onSnapshot(doc(db, 'admin', 'settings'), (snapshot) => {
       if (isCurrent && snapshot.exists()) {
         const snapData = snapshot.data();
-        if (snapData && Array.isArray(snapData.cryptoCoins)) {
-          setCoins(snapData.cryptoCoins);
+        if (snapData) {
+          if (Array.isArray(snapData.cryptoCoins)) {
+            setCoins(snapData.cryptoCoins);
+          }
+          if (snapData.adminPasscode) {
+            setAdminPasscode(snapData.adminPasscode);
+            localStorage.setItem('rider_admin_pin', snapData.adminPasscode);
+          }
         }
       }
     }, (err) => {
@@ -1006,13 +998,21 @@ export default function App() {
 
   const [adminPasscode, setAdminPasscode] = useState(() => localStorage.getItem('rider_admin_pin') || '350');
   const [newPasscodeInput, setNewPasscodeInput] = useState('');
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem('rider_admin_authenticated') === 'true';
+    }
+    return false;
+  });
   const [passcodeInput, setPasscodeInput] = useState('');
   const [passcodeError, setPasscodeError] = useState(false);
 
   const handleAdminAuth = () => {
     if (passcodeInput === adminPasscode) {
       setIsAdminAuthenticated(true);
+      if (typeof window !== "undefined") {
+        localStorage.setItem('rider_admin_authenticated', 'true');
+      }
       setPasscodeError(false);
     } else {
       setPasscodeError(true);
@@ -1020,10 +1020,19 @@ export default function App() {
     }
   };
 
-  const updatePasscode = () => {
+  const updatePasscode = async () => {
     if (newPasscodeInput.length >= 3) {
       setAdminPasscode(newPasscodeInput);
       localStorage.setItem('rider_admin_pin', newPasscodeInput);
+      
+      if (db) {
+        try {
+          await setDoc(doc(db, 'admin', 'settings'), { adminPasscode: newPasscodeInput }, { merge: true });
+        } catch (dbErr: any) {
+          console.warn("Failed to sync passcode to Firestore settings:", dbErr);
+        }
+      }
+
       showAdminStatus("Passcode Updated Successfully! ✅");
       setNewPasscodeInput('');
     } else {
@@ -1756,6 +1765,9 @@ export default function App() {
                       <button 
                         onClick={() => {
                           setIsAdminAuthenticated(false);
+                          if (typeof window !== "undefined") {
+                            localStorage.removeItem('rider_admin_authenticated');
+                          }
                           setShowAdmin(false);
                           setPasscodeInput('');
                         }} 

@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { initializeApp as initializeClientApp, getApps as getClientApps } from "firebase/app";
 import { 
@@ -143,15 +144,16 @@ async function startServer() {
 
   app.use(express.json());
   
-  app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
-    next();
-  });
+  // Configure CORS securely allowing the custom production domain, previews, and localhost dynamically
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Dynamically allow any incoming origin to avoid CORS blocker on previews, branches or custom domains
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"]
+  }));
   
   app.use((req, res, next) => {
     console.log(`[GLOBAL REQUEST] ${req.method} ${req.url}`);

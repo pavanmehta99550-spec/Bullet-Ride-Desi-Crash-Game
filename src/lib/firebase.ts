@@ -8,6 +8,7 @@ import {
   updateDoc,
   serverTimestamp 
 } from 'firebase/firestore';
+import { customFetch } from './api';
 
 // Check if the current environment is your Vercel production domain
 const isCustomDomain = typeof window !== 'undefined' && 
@@ -146,7 +147,7 @@ export async function syncUserProfile(user: any) {
         
         // If referred, trigger the atomic transaction block on our secure backend API
         if (referredByUid && referredByUid !== user.uid) {
-          fetch('/api/user/register-referral', {
+          customFetch('/api/user/register-referral', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: user.uid, referredBy: referredByUid })
