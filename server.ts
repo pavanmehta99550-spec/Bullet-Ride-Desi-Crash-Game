@@ -204,18 +204,22 @@ async function startServer() {
   }
 
   // --- ADMIN PHYSICS ROUTES ---
-  app.all("/api/admin/set-crash", async (req, res) => {
+  app.post("/api/admin/set-crash", async (req, res) => {
+    console.log("[SERVER] Received request for /api/admin/set-crash. Body:", JSON.stringify(req.body));
     const { crashPoint, crashReason } = req.body;
     if (crashPoint === undefined || crashPoint === null || crashPoint === "") {
+        console.log("[SERVER] Missing crashPoint");
         return res.status(400).json({ error: "Missing crashPoint value" });
     }
     const parsed = parseFloat(crashPoint);
     if (isNaN(parsed) || parsed < 1) {
+        console.log("[SERVER] Invalid crashPoint:", crashPoint);
         return res.status(400).json({ error: "Invalid crashPoint. Must be >= 1.00" });
     }
     nextForcedCrash = parsed;
     nextForcedReason = crashReason || "Admin Override 🛠️";
     
+    console.log("[SERVER] Successfully set crash:", nextForcedCrash);
     res.json({ status: "ok", message: `Physics Modified: Next Ride will crash at ${nextForcedCrash}x! ✅` });
   });
 
