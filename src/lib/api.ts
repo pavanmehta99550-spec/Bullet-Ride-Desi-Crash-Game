@@ -31,12 +31,34 @@ export const getBackendUrl = (): string => {
   return "https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app";
 };
 
+// Keep a reference to the browser's native fetch function to avoid infinite recursion when we override it globally
+const originalFetch = typeof window !== "undefined" ? window.fetch.bind(window) : null;
+
 let cachedWorkingBackend: string | null = (typeof window !== "undefined" ? localStorage.getItem("CACHED_WORKING_BACKEND_URL") : null);
 
 export const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   let url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+  const actualFetch = originalFetch || fetch;
+  
+  let isApiRoute = false;
+  let apiPath = "";
   
   if (url.startsWith("/api")) {
+    isApiRoute = true;
+    apiPath = url;
+  } else {
+    try {
+      if (url.includes("://")) {
+        const parsed = new URL(url);
+        if (parsed.pathname.startsWith("/api")) {
+          isApiRoute = true;
+          apiPath = parsed.pathname + parsed.search;
+        }
+      }
+    } catch (e) {}
+  }
+  
+  if (isApiRoute) {
     // Determine the primary backend URL
     let primaryBackend = getBackendUrl();
     
@@ -51,7 +73,7 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
       primaryBackend = cachedWorkingBackend;
     }
 
-    const primaryUrl = `${primaryBackend}${url}`;
+    const primaryUrl = `${primaryBackend}${apiPath}`;
     
     // Fallback options
     const fallbackUrls = [
@@ -69,7 +91,7 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
     }
 
     try {
-      const response = await fetch(targetInput, init);
+      const response = await actualFetch(targetInput, init);
       if (response.status === 502 || response.status === 503 || response.status === 552) {
         throw new Error(`Instance unresponsive (${response.status})`);
       }
@@ -88,7 +110,7 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
       }
 
       for (const fallbackBackend of fallbackUrls) {
-        const fallbackUrl = `${fallbackBackend}${url}`;
+        const fallbackUrl = `${fallbackBackend}${apiPath}`;
         console.log(`[CUSTOM FETCH] Trying auto-failover target: ${fallbackUrl}`);
         
         let fbInput: RequestInfo | URL = input;
@@ -101,7 +123,7 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
         }
 
         try {
-          const response = await fetch(fbInput, init);
+          const response = await actualFetch(fbInput, init);
           // Exclude 404 since it means the endpoint is also missing on this fallback
           if (response.ok || (response.status >= 200 && response.status < 500 && response.status !== 404)) {
             console.log(`[CUSTOM FETCH] Auto-healing success! Switched to: ${fallbackBackend}`);
@@ -118,8 +140,24 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
       throw err;
     }
   }
-  return fetch(input, init);
+  return actualFetch(input, init);
 };
+
+// Globally override native window.fetch to router-proof all direct/indirect fetch requests seamlessly!
+if (typeof window !== "undefined") {
+  try {
+    // Some sandboxed environments make window.fetch read-only with only a getter.
+    // Try to safely define it using Object.defineProperty, and handle any exception gracefully.
+    Object.defineProperty(window, "fetch", {
+      value: customFetch,
+      configurable: true,
+      writable: true,
+      enumerable: true
+    });
+  } catch (e) {
+    console.warn("[CUSTOM FETCH] Could not override window.fetch globally, falling back to local imports:", e);
+  }
+}
 
 export const safeFetchJson = async <T = any>(url: string, options?: RequestInit): Promise<T> => {
   const res = await customFetch(url, options);

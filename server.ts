@@ -790,10 +790,13 @@ async function startServer() {
     try {
       const { codes } = req.body;
       if (codes && Array.isArray(codes)) {
+        // Filter out any invalid items
+        const validCodes = codes.filter((c: any) => c && c.code && String(c.code).trim());
+
         // Track history of codes that were made (detect any newly added code)
-        for (const c of codes) {
+        for (const c of validCodes) {
           const uCode = String(c.code).trim().toUpperCase();
-          if (!promocodeHistory.some(ph => ph.code.toUpperCase() === uCode)) {
+          if (!promocodeHistory.some(ph => ph && ph.code && String(ph.code).toUpperCase() === uCode)) {
             promocodeHistory.unshift({
               code: uCode,
               reward: parseFloat(c.reward) || 0,
@@ -804,7 +807,7 @@ async function startServer() {
         }
 
         // Normalize codes: ensure keys have code, reward, uses, maxUses, usedBy
-        promocodes = codes.map((c: any) => ({
+        promocodes = validCodes.map((c: any) => ({
           code: String(c.code).trim().toUpperCase(),
           reward: parseFloat(c.reward) || 0,
           uses: parseInt(c.uses) || 0,
