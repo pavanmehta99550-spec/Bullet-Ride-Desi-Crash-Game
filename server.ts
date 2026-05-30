@@ -247,7 +247,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/set-crypto", async (req, res) => {
+  app.post("/api/admin/save-crypto", async (req, res) => {
     try {
       const { coins } = req.body;
       console.log("[SERVER] Received coins:", JSON.stringify(coins));
@@ -271,6 +271,10 @@ async function startServer() {
       console.error("[SERVER] Error saving crypto:", err);
       res.status(500).json({ error: "Internal Server Error: " + (err.message || String(err)) });
     }
+  });
+
+  app.post("/api/test-route", (req, res) => {
+      res.json({ status: "test-ok" });
   });
 
   // --- DEPOSIT & WITHDRAWAL ROUTES ---

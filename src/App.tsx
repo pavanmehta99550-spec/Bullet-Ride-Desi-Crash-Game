@@ -1598,7 +1598,7 @@ export default function App() {
   const saveCryptoAddresses = async () => {
     try {
       // Perform backend API sync to save addresses securely
-      const data = await safeFetchJson('/api/admin/set-crypto', {
+      const data = await safeFetchJson('/api/admin/save-crypto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ coins })
