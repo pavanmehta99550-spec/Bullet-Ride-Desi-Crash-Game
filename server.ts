@@ -144,16 +144,29 @@ async function startServer() {
 
   app.use(express.json());
   
-  // Configure CORS securely allowing the custom production domain, previews, and localhost dynamically
-  app.use(cors({
-    origin: (origin, callback) => {
-      // Dynamically allow any incoming origin to avoid CORS blocker on previews, branches or custom domains
-      callback(null, true);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"]
-  }));
+  // Configure CORS manually to be absolutely bulletproof on all domains (Vercel, Localhost, Previews)
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    
+    // Explicitly reflect the requester's origin to allow credentials-based CORS
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    } else {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    }
+    
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Baggage, Sentry-Trace");
+    
+    // Check if the request is an OPTIONS preflight request
+    if (req.method === "OPTIONS") {
+      console.log(`[CORS PREFLIGHT OPTIONS] Responded successfully for: ${req.url} (Origin: ${origin})`);
+      res.sendStatus(200);
+      return;
+    }
+    next();
+  });
   
   app.use((req, res, next) => {
     console.log(`[GLOBAL REQUEST] ${req.method} ${req.url}`);
