@@ -204,7 +204,7 @@ async function startServer() {
   }
 
   // --- ADMIN PHYSICS ROUTES ---
-  app.post("/api/admin/set-crash", (req, res) => {
+  app.all("/api/admin/set-crash", async (req, res) => {
     const { crashPoint, crashReason } = req.body;
     if (crashPoint === undefined || crashPoint === null || crashPoint === "") {
         return res.status(400).json({ error: "Missing crashPoint value" });
