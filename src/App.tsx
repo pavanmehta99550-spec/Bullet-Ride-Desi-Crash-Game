@@ -47,25 +47,27 @@ export default function App() {
   const [isBlocked, setIsBlocked] = useState(false);
 
   const [multiplier, setMultiplier] = useState(1.00);
-  const [coins, setCoins] = useState<{name: string, symbol: string, color: string, address: string}[]>([
-    { name: 'Bitcoin', symbol: 'BTC', color: '#F7931A', address: 'bc1qxy2kgdy6jr1789btc' },
-    { name: 'Ethereum', symbol: 'ETH', color: '#627EEA', address: '0x71C765d897eth' },
-    { name: 'Tether', symbol: 'USDT', color: '#26A17B', address: '0x26A17Be456usdt' },
-    { name: 'Solana', symbol: 'SOL', color: '#14F195', address: '6x5df678sol' },
-    { name: 'Dogecoin', symbol: 'DOGE', color: '#C2A633', address: 'D8vBm90ldoge' },
-    { name: 'Litecoin', symbol: 'LTC', color: '#345D9D', address: 'M8vAx87ultc' },
-    { name: 'Tron', symbol: 'TRX', color: '#FF0013', address: 'TYf82atrx' },
-    { name: 'Binance Coin', symbol: 'BNB', color: '#F3BA2F', address: '0xBNBf3babnb' },
-    { name: 'Ripple', symbol: 'XRP', color: '#23292F', address: 'rXRP2329xrp' },
-    { name: 'Polygon', symbol: 'MATIC', color: '#8247E5', address: '0xMATIC8247matic' },
-    { name: 'Toncoin', symbol: 'TON', color: '#0098EA', address: 'UQTON0098ton' },
-    { name: 'Cardano', symbol: 'ADA', color: '#0033AD', address: 'addr1ADA0033ada' },
-    { name: 'Bitcoin Cash', symbol: 'BCH', color: '#8DC351', address: 'bch1qBCH8dc3bch' },
-    { name: 'Dash', symbol: 'DASH', color: '#008DE4', address: 'X_DASH008ddash' },
-    { name: 'DigiByte', symbol: 'DGB', color: '#0066CC', address: 'dgb1qDGB0066dgb' },
-    { name: 'Feyorra', symbol: 'FEY', color: '#A020F0', address: '0xFEYa020fey' },
-    { name: 'Chainlink', symbol: 'LINK', color: '#2A5ADA', address: '0xLINK2a5alink' },
-    { name: 'Polkadot', symbol: 'DOT', color: '#E6007A', address: '1DOTe600dot' }
+  const [coins, setCoins] = useState<{name: string, symbol: string, color: string, address: string, isVisible: boolean}[]>([
+    { name: 'Bitcoin', symbol: 'BTC', color: '#F7931A', address: 'bc1qxy2kgdy6jr1789btc', isVisible: true },
+    { name: 'Ethereum', symbol: 'ETH', color: '#627EEA', address: '0x71C765d897eth', isVisible: true },
+    { name: 'Tether', symbol: 'USDT', color: '#26A17B', address: '0x26A17Be456usdt', isVisible: true },
+    { name: 'Solana', symbol: 'SOL', color: '#14F195', address: '6x5df678sol', isVisible: true },
+    { name: 'Dogecoin', symbol: 'DOGE', color: '#C2A633', address: 'D8vBm90ldoge', isVisible: true },
+    { name: 'Litecoin', symbol: 'LTC', color: '#345D9D', address: 'M8vAx87ultc', isVisible: true },
+    { name: 'Tron', symbol: 'TRX', color: '#FF0013', address: 'TYf82atrx', isVisible: true },
+    { name: 'Binance Coin', symbol: 'BNB', color: '#F3BA2F', address: '0xBNBf3babnb', isVisible: true },
+    { name: 'Ripple', symbol: 'XRP', color: '#23292F', address: 'rXRP2329xrp', isVisible: true },
+    { name: 'Polygon', symbol: 'MATIC', color: '#8247E5', address: '0xMATIC8247matic', isVisible: true },
+    { name: 'Toncoin', symbol: 'TON', color: '#0098EA', address: 'UQTON0098ton', isVisible: true },
+    { name: 'Cardano', symbol: 'ADA', color: '#0033AD', address: 'addr1ADA0033ada', isVisible: true },
+    { name: 'Bitcoin Cash', symbol: 'BCH', color: '#8DC351', address: 'bch1qBCH8dc3bch', isVisible: true },
+    { name: 'Dash', symbol: 'DASH', color: '#008DE4', address: 'X_DASH008ddash', isVisible: true },
+    { name: 'DigiByte', symbol: 'DGB', color: '#0066CC', address: 'dgb1qDGB0066dgb', isVisible: true },
+    { name: 'Feyorra', symbol: 'FEY', color: '#A020F0', address: '0xFEYa020fey', isVisible: true },
+    { name: 'Chainlink', symbol: 'LINK', color: '#2A5ADA', address: '0xLINK2a5alink', isVisible: true },
+    { name: 'Polkadot', symbol: 'DOT', color: '#E6007A', address: '1DOTe600dot', isVisible: true },
+    { name: 'Monero', symbol: 'XMR', color: '#FF6600', address: 'xmraddr1', isVisible: true },
+    { name: 'Taraxa', symbol: 'TARA', color: '#444444', address: 'taraaddr1', isVisible: true },
   ]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isCrashed, setIsCrashed] = useState(false);
@@ -2102,7 +2104,19 @@ export default function App() {
                             <div key={coin.symbol} className="bg-black/40 p-3 border border-zinc-800 rounded space-y-2">
                             <div className="flex justify-between items-center">
                                 <span className="font-bold text-[10px]" style={{ color: coin.color }}>{coin.name}</span>
-                                <span className="text-[9px] text-zinc-500 font-mono">{coin.symbol}</span>
+                                <label className="flex items-center gap-1 text-[9px] text-zinc-500 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={coin.isVisible}
+                                        onChange={(e) => {
+                                            const newCoins = [...coins];
+                                            newCoins[index] = { ...coin, isVisible: e.target.checked };
+                                            setCoins(newCoins);
+                                        }}
+                                        className="accent-[#FFD700]"
+                                    />
+                                    Visible
+                                </label>
                             </div>
                             <input 
                                 type="text" 
@@ -2775,7 +2789,7 @@ export default function App() {
 
               {!selectedCoin ? (
                 <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {coins.map((coin) => (
+                  {coins.filter(c => c.isVisible).map((coin) => (
                     <button 
                       key={coin.symbol}
                       onClick={() => setSelectedCoin(coin)}
@@ -2920,7 +2934,7 @@ export default function App() {
                 <div className="space-y-4">
                    <p className="text-[10px] uppercase font-bold text-zinc-500">Select Withdrawal Coin</p>
                    <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto custom-scrollbar">
-                     {coins.filter(c => c.symbol !== 'BTC').map((coin) => (
+                     {coins.filter(c => c.isVisible && c.symbol !== 'BTC').map((coin) => (
                        <button 
                          key={coin.symbol}
                          onClick={() => { setSelectedCoin(coin); setWithdrawStep('amount'); }}
