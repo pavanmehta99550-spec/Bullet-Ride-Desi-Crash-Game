@@ -7,14 +7,15 @@ import {
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
-  updateUserBalance, saveGameHistory, saveGlobalHistory 
+  updateUserBalance, saveGameHistory, saveGlobalHistory,
+  firebaseConfig
 } from './lib/firebase';
 import { 
   onAuthStateChanged, signInWithPopup, signOut,
   signInWithEmailAndPassword, createUserWithEmailAndPassword,
   updateProfile
 } from 'firebase/auth';
-import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
 import { SearchableCoinDropdown } from './components/SearchableCoinDropdown';
@@ -253,6 +254,42 @@ export default function App() {
       console.warn("Could not capture referral parameter:", e);
     }
 
+    const syncFirebaseConfig = async () => {
+      try {
+        const backendConfig = await safeFetchJson('/api/config/firebase');
+        if (backendConfig && backendConfig.apiKey) {
+          const keysToCompare = ['apiKey', 'authDomain', 'projectId', 'appId', 'storageBucket', 'messagingSenderId', 'firestoreDatabaseId'];
+          let isDifferent = false;
+          
+          let savedConfig: any = {};
+          try {
+            const savedStr = localStorage.getItem('custom_firebase_config_v2');
+            if (savedStr) savedConfig = JSON.parse(savedStr);
+          } catch (_) {}
+          
+          for (const k of keysToCompare) {
+            const currentVal = savedConfig[k] || (firebaseConfig as any)[k];
+            const newVal = backendConfig[k];
+            if (newVal && currentVal !== newVal) {
+              isDifferent = true;
+              break;
+            }
+          }
+          
+          if (isDifferent) {
+            console.log("[FIREBASE AUTO-SYNC] Discrepancy found! Updating localStorage configuration and reloading...");
+            localStorage.setItem('custom_firebase_config_v2', JSON.stringify(backendConfig));
+            setTimeout(() => {
+              window.location.reload();
+            }, 150);
+          }
+        }
+      } catch (err) {
+        console.warn("[FIREBASE AUTO-SYNC] Could not fetch backend Firebase configuration:", err);
+      }
+    };
+
+    syncFirebaseConfig();
     fetchCoins();
     fetchCryptoLimits();
     fetchRates();
@@ -294,6 +331,7 @@ export default function App() {
                 updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
                 setWithdrawableBalance(prev => Math.max(0, prev - b));
                 setIsBetQueued(false);
+                registerActiveBetValue(userRef.current.uid, data.roundId, b, activeCoinRef.current);
              }
           } else if (isAutoPlayRef.current && userRef.current) {
              const b = betAmountRef.current;
@@ -301,6 +339,7 @@ export default function App() {
                 setHasActiveBet(true);
                 updateUserBalance(userRef.current.uid, balanceRef.current - b, activeCoinRef.current);
                 setWithdrawableBalance(prev => Math.max(0, prev - b));
+                registerActiveBetValue(userRef.current.uid, data.roundId, b, activeCoinRef.current);
              }
           }
         }
@@ -791,6 +830,37 @@ export default function App() {
     }
   };
 
+  const registerActiveBetValue = async (uid: string, roundId: string, amount: number, coin: string) => {
+    if (!db || !roundId) return;
+    try {
+      let inrValue = amount;
+      if (coin !== 'INR') {
+        const rate = rates[coin] || 1;
+        inrValue = amount * rate;
+      }
+      await setDoc(doc(db, 'gameBets', roundId, 'bets', uid), {
+        userId: uid,
+        amount,
+        coin,
+        inrValue: parseFloat(inrValue.toFixed(2)),
+        timestamp: Date.now()
+      });
+      console.log(`[BET REGISTERED] Round ${roundId}: Placed ${amount} ${coin} (≈ ₹${inrValue.toFixed(2)})`);
+    } catch (err) {
+      console.warn("[BET REGISTERED] Failed to save active bet:", err);
+    }
+  };
+
+  const cancelActiveBetValue = async (uid: string, roundId: string) => {
+    if (!db || !roundId) return;
+    try {
+      await deleteDoc(doc(db, 'gameBets', roundId, 'bets', uid));
+      console.log(`[BET CANCELED] Round ${roundId} canceled for user ${uid}`);
+    } catch (err) {
+      console.warn("[BET CANCELED] Failed to cancel active bet:", err);
+    }
+  };
+
   const startRound = () => {
     // If running manually and user is not logged in, show Auth modal
     const currentUser = userRef.current;
@@ -812,6 +882,7 @@ export default function App() {
           setHasActiveBet(true);
           updateUserBalance(currentUser.uid, balanceRef.current - betAmountRef.current, activeCoinRef.current);
           setWithdrawableBalance(prev => Math.max(0, prev - betAmountRef.current));
+          registerActiveBetValue(currentUser.uid, globalRoundIdRef.current, betAmountRef.current, activeCoinRef.current);
        } else {
           setError("Balance kam hai bhai!");
           setTimeout(() => setError(null), 3000);
@@ -964,6 +1035,7 @@ export default function App() {
           setHasActiveBet(true);
           updateUserBalance(user.uid, balance - betAmount, activeCoin);
           setWithdrawableBalance(prev => Math.max(0, prev - betAmount));
+          registerActiveBetValue(user.uid, globalRoundIdRef.current, betAmount, activeCoin);
         } else {
           setError("Balance kam hai bhai!");
           setTimeout(() => setError(null), 3000);
@@ -3763,6 +3835,7 @@ export default function App() {
                     setHasActiveBet(false);
                     updateUserBalance(user.uid, coinBalances[activeCoin] + b, activeCoin);
                     setWithdrawableBalance(prev => prev + b);
+                    cancelActiveBetValue(user.uid, globalRoundIdRef.current);
                   } else {
                     // Place direct active bet right now
                     const b = betAmount;
@@ -3774,6 +3847,7 @@ export default function App() {
                     setHasActiveBet(true);
                     updateUserBalance(user.uid, coinBalances[activeCoin] - b, activeCoin);
                     setWithdrawableBalance(prev => Math.max(0, prev - b));
+                    registerActiveBetValue(user.uid, globalRoundIdRef.current, b, activeCoin);
                   }
                 } else {
                   // CRASHED state, toggle next-round queue

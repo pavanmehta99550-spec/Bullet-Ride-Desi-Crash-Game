@@ -46,6 +46,9 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
   if (url.startsWith("/api")) {
     isApiRoute = true;
     apiPath = url;
+  } else if (url.startsWith("api/")) {
+    isApiRoute = true;
+    apiPath = "/" + url;
   } else {
     try {
       if (url.includes("://")) {
@@ -53,6 +56,9 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
         if (parsed.pathname.startsWith("/api")) {
           isApiRoute = true;
           apiPath = parsed.pathname + parsed.search;
+        } else if (parsed.pathname.startsWith("api/")) {
+          isApiRoute = true;
+          apiPath = "/" + parsed.pathname + parsed.search;
         }
       }
     } catch (e) {}
@@ -73,7 +79,9 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
       primaryBackend = cachedWorkingBackend;
     }
 
-    const primaryUrl = `${primaryBackend}${apiPath}`;
+    // Strip trailing slashes on backend endpoints to cleanly construct absolute API targets
+    const cleanPrimaryBackend = primaryBackend.endsWith("/") ? primaryBackend.slice(0, -1) : primaryBackend;
+    const primaryUrl = `${cleanPrimaryBackend}${apiPath}`;
     
     // Fallback options
     const fallbackUrls = [
@@ -110,7 +118,8 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
       }
 
       for (const fallbackBackend of fallbackUrls) {
-        const fallbackUrl = `${fallbackBackend}${apiPath}`;
+        const cleanFallbackBackend = fallbackBackend.endsWith("/") ? fallbackBackend.slice(0, -1) : fallbackBackend;
+        const fallbackUrl = `${cleanFallbackBackend}${apiPath}`;
         console.log(`[CUSTOM FETCH] Trying auto-failover target: ${fallbackUrl}`);
         
         let fbInput: RequestInfo | URL = input;
@@ -126,10 +135,10 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
           const response = await actualFetch(fbInput, init);
           // Exclude 404 since it means the endpoint is also missing on this fallback
           if (response.ok || (response.status >= 200 && response.status < 500 && response.status !== 404)) {
-            console.log(`[CUSTOM FETCH] Auto-healing success! Switched to: ${fallbackBackend}`);
-            cachedWorkingBackend = fallbackBackend;
+            console.log(`[CUSTOM FETCH] Auto-healing success! Switched to: ${cleanFallbackBackend}`);
+            cachedWorkingBackend = cleanFallbackBackend;
             if (typeof window !== "undefined") {
-              localStorage.setItem("CACHED_WORKING_BACKEND_URL", fallbackBackend);
+              localStorage.setItem("CACHED_WORKING_BACKEND_URL", cleanFallbackBackend);
             }
             return response;
           }
