@@ -28,7 +28,7 @@ interface GameHistory {
   time: string;
 }
 
-import { customFetch as fetch, safeFetchJson } from './lib/api';
+import { customFetch as fetch, safeFetchJson, getBackendUrl } from './lib/api';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -1006,6 +1006,42 @@ export default function App() {
   });
   const [passcodeInput, setPasscodeInput] = useState('');
   const [passcodeError, setPasscodeError] = useState(false);
+
+  const [customBackendInput, setCustomBackendInput] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("CUSTOM_BACKEND_URL") || "";
+    }
+    return "";
+  });
+
+  const handleSaveCustomBackend = () => {
+    if (customBackendInput.trim()) {
+      localStorage.setItem("CUSTOM_BACKEND_URL", customBackendInput.trim());
+      showAdminStatus("Custom Backend Registered! ⚡ Reloading to apply...", 'success');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    }
+  };
+
+  const handlePresetBackend = (url: string) => {
+    setCustomBackendInput(url);
+    localStorage.setItem("CUSTOM_BACKEND_URL", url);
+    showAdminStatus(`Switched Backend to ${url}! ⚡ Reloading to apply...`, 'success');
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+  };
+
+  const handleClearCustomBackend = () => {
+    setCustomBackendInput("");
+    localStorage.removeItem("CUSTOM_BACKEND_URL");
+    localStorage.removeItem("CACHED_WORKING_BACKEND_URL");
+    showAdminStatus("Reset Backend to automatic selection! 🔄 Reloading...", 'success');
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+  };
 
   const handleAdminAuth = () => {
     if (passcodeInput === adminPasscode) {
@@ -2405,6 +2441,71 @@ export default function App() {
                   <p className="mt-4 text-[10px] text-zinc-600 uppercase tracking-widest italic">
                     * Physics override only applies to the next ride. Passcode is saved in your local browser storage.
                   </p>
+
+                  <div className="mt-6 p-4 bg-zinc-950 border border-zinc-805/60 rounded-xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1">
+                        <span className="text-[#FFD700]">⚡</span> Connection Settings
+                      </h4>
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#FFD700]/10 text-[#FFD700] border border-[#FFD700]/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#FFD700] animate-ping" /> Connection Online
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500 leading-relaxed uppercase italic font-bold">
+                      Backend Cloud Run instance processes manual fuel balances, deposits, withdrawals, physics, and promo rewards.
+                    </p>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="https://your-backend-api.run.app"
+                          value={customBackendInput}
+                          onChange={(e) => setCustomBackendInput(e.target.value)}
+                          className="flex-1 bg-black/80 border-2 border-zinc-850 px-3 py-2 text-xs rounded outline-none text-white font-mono focus:border-[#FFD700] transition-all"
+                        />
+                        <button
+                          onClick={handleSaveCustomBackend}
+                          className="bg-[#FFD700] hover:bg-white text-black text-[10px] whitespace-nowrap font-black uppercase tracking-wider px-3.5 py-2.5 rounded transition-all active:scale-95"
+                        >
+                          Set Custom
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          onClick={() => handlePresetBackend("https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app")}
+                          className={`px-3 py-1.5 rounded text-[10px] font-bold font-mono transition-all border-2 ${
+                            getBackendUrl() === "https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app"
+                              ? "border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]"
+                              : "border-zinc-850 bg-zinc-950 text-zinc-500 hover:text-white"
+                          }`}
+                        >
+                          DEV: ais-dev (Cloud Run)
+                        </button>
+                        <button
+                          onClick={() => handlePresetBackend("https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app")}
+                          className={`px-3 py-1.5 rounded text-[10px] font-bold font-mono transition-all border-2 ${
+                            getBackendUrl() === "https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app"
+                              ? "border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]"
+                              : "border-zinc-850 bg-zinc-950 text-zinc-500 hover:text-white"
+                          }`}
+                        >
+                          PRE: ais-pre (Cloud Run)
+                        </button>
+                        {customBackendInput && (
+                          <button
+                            onClick={handleClearCustomBackend}
+                            className="px-3 py-1.5 rounded text-[10px] font-bold bg-red-950/30 text-red-400 border-2 border-red-900/50 hover:bg-red-900 transition-all active:scale-95"
+                          >
+                            Reset To Auto (Auto-healing)
+                          </button>
+                        )}
+                      </div>
+                      <div className="bg-black/60 p-2.5 rounded border border-zinc-850 mt-2">
+                        <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-black">Active Endpoint Origin:</div>
+                        <div className="text-[11px] text-[#FFD700] font-mono break-all font-semibold select-all mt-1">{getBackendUrl()}</div>
+                      </div>
+                    </div>
+                  </div>
                   
                   <div className="mt-8 pt-6 border-t border-zinc-800">
                     <button 

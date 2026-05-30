@@ -31,18 +31,80 @@ export const getBackendUrl = (): string => {
   return "https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app";
 };
 
+let cachedWorkingBackend: string | null = (typeof window !== "undefined" ? localStorage.getItem("CACHED_WORKING_BACKEND_URL") : null);
+
 export const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   let url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   
   if (url.startsWith("/api")) {
-    const backendUrl = getBackendUrl();
-    const fullUrl = `${backendUrl}${url}`;
+    // Determine the primary backend URL
+    let primaryBackend = getBackendUrl();
+    
+    // If we have a cached working backend and are not using a forced user custom one, prefer the working one
+    const userCustomBackend = typeof window !== "undefined" ? localStorage.getItem("CUSTOM_BACKEND_URL") : null;
+    if (cachedWorkingBackend && !userCustomBackend) {
+      primaryBackend = cachedWorkingBackend;
+    }
+
+    const primaryUrl = `${primaryBackend}${url}`;
+    
+    // Fallback options
+    const fallbackUrls = [
+      "https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app",
+      "https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app"
+    ].filter(u => u !== primaryBackend);
+
+    let targetInput: RequestInfo | URL = input;
     if (typeof input === "string") {
-      input = fullUrl;
+      targetInput = primaryUrl;
     } else if (input instanceof URL) {
-      input = new URL(fullUrl);
+      targetInput = new URL(primaryUrl);
     } else {
-      input = new Request(fullUrl, input as RequestInit);
+      targetInput = new Request(primaryUrl, input as RequestInit);
+    }
+
+    try {
+      const response = await fetch(targetInput, init);
+      if (response.status === 502 || response.status === 503 || response.status === 552) {
+        throw new Error(`Instance unresponsive (${response.status})`);
+      }
+      return response;
+    } catch (err) {
+      console.warn(`[CUSTOM FETCH] Failed to connect to primary backend: ${primaryUrl}. Trying backends fallback...`, err);
+      
+      // If we are overriding with a custom URL, don't try other random fallbacks, just throw the error
+      if (userCustomBackend) {
+        throw err;
+      }
+
+      for (const fallbackBackend of fallbackUrls) {
+        const fallbackUrl = `${fallbackBackend}${url}`;
+        console.log(`[CUSTOM FETCH] Trying auto-failover target: ${fallbackUrl}`);
+        
+        let fbInput: RequestInfo | URL = input;
+        if (typeof input === "string") {
+          fbInput = fallbackUrl;
+        } else if (input instanceof URL) {
+          fbInput = new URL(fallbackUrl);
+        } else {
+          fbInput = new Request(fallbackUrl, input as RequestInit);
+        }
+
+        try {
+          const response = await fetch(fbInput, init);
+          if (response.ok || (response.status >= 200 && response.status < 500)) {
+            console.log(`[CUSTOM FETCH] Auto-healing success! Switched to: ${fallbackBackend}`);
+            cachedWorkingBackend = fallbackBackend;
+            if (typeof window !== "undefined") {
+              localStorage.setItem("CACHED_WORKING_BACKEND_URL", fallbackBackend);
+            }
+            return response;
+          }
+        } catch (fbErr) {
+          console.warn(`[CUSTOM FETCH] Fallback fail to ${fallbackUrl}:`, fbErr);
+        }
+      }
+      throw err;
     }
   }
   return fetch(input, init);
