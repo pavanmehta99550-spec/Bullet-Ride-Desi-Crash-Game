@@ -96,7 +96,7 @@ export default function App() {
   const [newPromoMaxUses, setNewPromoMaxUses] = useState('1000');
 
   const [balance, setBalance] = useState(0);
-  const [activeCoin, setActiveCoin] = useState<string>('INR');
+  const [activeCoin, setActiveCoin] = useState<string>('USDT');
   const [coinBalances, setCoinBalances] = useState<Record<string, number>>({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 });
   const [withdrawableBalance, setWithdrawableBalance] = useState(0);
   const [rates, setRates] = useState<Record<string, number>>({});
@@ -133,7 +133,7 @@ export default function App() {
   const animationRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const globalRoundIdRef = useRef<string | null>(null);
-  const activeCoinRef = useRef<string>('INR');
+  const activeCoinRef = useRef<string>('USDT');
 
   // Sync refs to avoid stale closures in core intervals
   const isAutoPlayRef = useRef(isAutoPlay);
@@ -481,7 +481,8 @@ export default function App() {
         setUser({ ...firebaseUser, ...profile });
         if (profile) {
           const profileData = profile as any;
-          const curActiveCoin = profileData.activeCoin || 'INR';
+          const rawActiveCoin = profileData.activeCoin || 'USDT';
+          const curActiveCoin = rawActiveCoin === 'INR' ? 'USDT' : rawActiveCoin;
           const dBalances = profileData.coinBalances || {};
           const mergedBalances = {
             INR: dBalances.INR !== undefined ? dBalances.INR : (profileData.walletBalance || 0),
@@ -520,7 +521,7 @@ export default function App() {
         setBalance(0);
         setHistory([]); // Clear history on signout
         setMyGameHistory([]); // Clear personal history on signout
-        setActiveCoin('INR');
+        setActiveCoin('USDT');
         setCoinBalances({ INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 });
         setWithdrawableBalance(0);
         setIsBlocked(false);
@@ -556,7 +557,8 @@ export default function App() {
       if (!isCurrent) return;
       if (doc.exists()) {
         const data = doc.data();
-        const curActiveCoin = data.activeCoin || 'INR';
+        const rawActiveCoin = data.activeCoin || 'USDT';
+        const curActiveCoin = rawActiveCoin === 'INR' ? 'USDT' : rawActiveCoin;
         const dBalances = data.coinBalances || {};
         const mergedBalances = {
           INR: dBalances.INR !== undefined ? dBalances.INR : (data.walletBalance || 0),
@@ -735,7 +737,8 @@ export default function App() {
       setUser({ ...guestUser, ...profile });
       if (profile) {
         const profileData = profile as any;
-        const curActiveCoin = profileData.activeCoin || 'INR';
+        const rawActiveCoin = profileData.activeCoin || 'USDT';
+        const curActiveCoin = rawActiveCoin === 'INR' ? 'USDT' : rawActiveCoin;
         const dBalances = profileData.coinBalances || {};
         const mergedBalances = {
           INR: dBalances.INR !== undefined ? dBalances.INR : (profileData.walletBalance || 0),
@@ -774,10 +777,10 @@ export default function App() {
       // Clean default starting balances for developers/testers to have fun instantly!
       const dBalances = { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500, LTC: 5, TRX: 100, BNB: 0.5, XRP: 500, MATIC: 300, TON: 50, ADA: 400, BCH: 1, DASH: 2, DGB: 1000, FEY: 200, LINK: 20, DOT: 30 };
       setUser(guestUser);
-      setActiveCoin('INR');
+      setActiveCoin('USDT');
       setCoinBalances(dBalances);
-      setBalance(50000);
-      setWithdrawableBalance(50000);
+      setBalance(250);
+      setWithdrawableBalance(250);
       setIsBlocked(false);
       setBonusBalance(0);
       setHasDeposited(false);

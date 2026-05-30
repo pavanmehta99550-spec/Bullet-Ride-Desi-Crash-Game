@@ -129,7 +129,7 @@ export default function AuthModal({ isOpen, onClose, onGuestLogin }: AuthModalPr
             displayName: name,
             walletBalance: 0,
             coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 },
-            activeCoin: 'INR',
+            activeCoin: 'USDT',
             bonus_balance: 0,
             has_deposited: false,
             referralCode: userCredential.user.uid,

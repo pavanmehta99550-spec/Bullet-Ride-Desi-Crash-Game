@@ -22,7 +22,7 @@ export const SearchableCoinDropdown: React.FC<Props> = ({ coins, activeCoin, onC
     c.symbol.toLowerCase().includes(search.toLowerCase())
   );
 
-  const activeCoinObj = coins.find(c => c.symbol === activeCoin) || { name: 'INR', symbol: 'INR', color: '#FFD700' };
+  const activeCoinObj = coins.find(c => c.symbol === activeCoin) || coins.find(c => c.symbol === 'USDT') || { name: 'Tether', symbol: 'USDT', color: '#26A17B' };
 
   return (
     <div className="relative">
@@ -47,12 +47,6 @@ export const SearchableCoinDropdown: React.FC<Props> = ({ coins, activeCoin, onC
             />
           </div>
           <div className="max-h-64 overflow-y-auto custom-scrollbar">
-            <div 
-              onClick={() => { onChange('INR'); setIsOpen(false); }}
-              className="px-2 py-1.5 text-[10px] font-bold cursor-pointer hover:bg-zinc-800 rounded text-yellow-500"
-            >
-              ₹ INR
-            </div>
             {filteredCoins.map(coin => (
               <div 
                 key={coin.symbol}

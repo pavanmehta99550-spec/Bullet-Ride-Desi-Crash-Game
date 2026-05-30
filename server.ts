@@ -147,13 +147,27 @@ async function startServer() {
   // Configure CORS manually to be absolutely bulletproof on all domains (Vercel, Localhost, Previews)
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    
-    // Explicitly reflect the requester's origin to allow credentials-based CORS
+    const allowedOrigins = [
+      "https://bullet-ride-desi-crash-game.vercel.app",
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:5173"
+    ];
+
+    let corsOrigin = "https://bullet-ride-desi-crash-game.vercel.app";
     if (origin) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    } else {
-      res.setHeader("Access-Control-Allow-Origin", "*");
+      if (
+        allowedOrigins.includes(origin) || 
+        origin.includes("run.app") || 
+        origin.includes("vercel.app") ||
+        origin.includes("localhost") ||
+        origin.includes("127.0.0.1")
+      ) {
+        corsOrigin = origin;
+      }
     }
+    
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
     
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -180,8 +194,13 @@ async function startServer() {
     next();
   });
   
-  app.use("/api/*", (req, res, next) => {
-    console.log(`[API REQUEST] ${req.method} ${req.url}`);
+  const adminRouter = express.Router();
+
+  app.use((req, res, next) => {
+    if (req.url.startsWith("/api/") || req.originalUrl?.startsWith("/api/")) {
+      const fullUrl = req.originalUrl || req.url;
+      console.log(`[Detailed API Request] Method: ${req.method} | URL: ${fullUrl} | Headers: ${JSON.stringify(req.headers)}`);
+    }
     next();
   });
 
@@ -236,7 +255,7 @@ async function startServer() {
   }
 
   // --- ADMIN PHYSICS ROUTES ---
-  app.post("/api/admin/set-crash", async (req, res) => {
+  adminRouter.post("/set-crash", async (req, res) => {
     console.log("[SERVER] Received request for /api/admin/set-crash. Body:", JSON.stringify(req.body));
     const { crashPoint, crashReason } = req.body;
     if (crashPoint === undefined || crashPoint === null || crashPoint === "") {
@@ -255,7 +274,7 @@ async function startServer() {
     res.json({ status: "ok", message: `Physics Modified: Next Ride will crash at ${nextForcedCrash}x! ✅` });
   });
 
-  app.post("/api/admin/consume-override", (req, res) => {
+  adminRouter.post("/consume-override", (req, res) => {
     nextForcedCrash = null;
     nextForcedReason = null;
     res.json({ status: "ok", message: "Override cleared!" });
@@ -293,7 +312,7 @@ async function startServer() {
     }
   });
 
-  app.all("/api/admin/save-crypto", async (req, res) => {
+  adminRouter.all("/save-crypto", async (req, res) => {
     try {
       const { coins } = req.body;
       console.log("[SERVER] Received coins:", JSON.stringify(coins));
@@ -341,9 +360,9 @@ async function startServer() {
     res.json({ status: "ok", message: "Deposit request submitted! Please wait for approval." });
   });
 
-  app.get("/api/admin/deposits", (req, res) => res.json(depositRequests));
+  adminRouter.get("/deposits", (req, res) => res.json(depositRequests));
 
-  app.post("/api/admin/deposit/approve", async (req, res) => {
+  adminRouter.post("/deposit/approve", async (req, res) => {
     const { requestId } = req.body;
     const request = depositRequests.find(r => r.id === requestId);
     if (!request) return res.status(404).json({ error: "Request not found" });
@@ -522,9 +541,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/withdrawals", (req, res) => res.json(withdrawalRequests));
+  adminRouter.get("/withdrawals", (req, res) => res.json(withdrawalRequests));
 
-  app.post("/api/admin/withdraw/approve", async (req, res) => {
+  adminRouter.post("/withdraw/approve", async (req, res) => {
     const { requestId } = req.body;
     const request = withdrawalRequests.find(r => r.id === requestId);
     if (!request) return res.status(404).json({ error: "Request not found" });
@@ -556,7 +575,7 @@ async function startServer() {
   });
 
   // --- USER MANAGEMENT ---
-  app.get("/api/admin/users", async (req, res) => {
+  adminRouter.get("/users", async (req, res) => {
     if (!db) return res.json([]);
     try {
       const snap = await getDocs(collection(db, "users"));
@@ -568,7 +587,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/user/update-balance", async (req, res) => {
+  adminRouter.post("/user/update-balance", async (req, res) => {
     const { userId, amountToAdd, coinSymbol } = req.body;
     if (db) {
       const userRef = doc(db, "users", userId);
@@ -589,20 +608,20 @@ async function startServer() {
     res.json({ status: "ok", message: "Balance updated!" });
   });
 
-  app.post("/api/admin/user/reset-balance", async (req, res) => {
+  adminRouter.post("/user/reset-balance", async (req, res) => {
     const { userId } = req.body;
     if (db) {
       await setDoc(doc(db, "users", userId), { 
         walletBalance: 0, 
         coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 },
-        activeCoin: 'INR',
+        activeCoin: 'USDT',
         updatedAt: serverTimestamp()
       }, { merge: true });
     }
     res.json({ status: "ok", message: "Balance reset!" });
   });
 
-  app.post("/api/admin/user/toggle-block", async (req, res) => {
+  adminRouter.post("/user/toggle-block", async (req, res) => {
     const { userId, isBlocked } = req.body;
     if (db) await setDoc(doc(db, "users", userId), { isBlocked, updatedAt: serverTimestamp() }, { merge: true });
     res.json({ status: "ok", message: "User status updated!" });
@@ -755,19 +774,19 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/promocodes", (req, res) => {
+  adminRouter.get("/promocodes", (req, res) => {
     res.json(promocodes);
   });
 
-  app.get("/api/admin/promocodes-history", (req, res) => {
+  adminRouter.get("/promocodes-history", (req, res) => {
     res.json(promocodeHistory);
   });
 
-  app.get("/api/admin/promo-redemptions", (req, res) => {
+  adminRouter.get("/promo-redemptions", (req, res) => {
     res.json(promoRedemptions);
   });
 
-  app.post("/api/admin/set-promocodes", async (req, res) => {
+  adminRouter.post("/set-promocodes", async (req, res) => {
     try {
       const { codes } = req.body;
       if (codes && Array.isArray(codes)) {
@@ -915,8 +934,18 @@ async function startServer() {
     return { roundId, crashPoint, crashReason, isOverride };
   }
 
+  // Mount the admin router to group all /api/admin/* routes cleanly and prevent masking
+  app.use("/api/admin", adminRouter);
+
   // --- VITE / STATIC ---
-  app.use("/api/*", (req, res) => res.status(404).json({ error: "API route not found" }));
+  app.use("/api/*", (req, res) => {
+    console.error(`[API 404 NOT FOUND] Method: ${req.method} | URL: ${req.baseUrl || req.originalUrl || req.url}`);
+    res.status(404).json({ 
+      error: "API route not found", 
+      requestedMethod: req.method, 
+      requestedUrl: req.originalUrl || req.url 
+    });
+  });
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });

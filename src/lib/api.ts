@@ -42,7 +42,12 @@ export const customFetch = async (input: RequestInfo | URL, init?: RequestInit):
     
     // If we have a cached working backend and are not using a forced user custom one, prefer the working one
     const userCustomBackend = typeof window !== "undefined" ? localStorage.getItem("CUSTOM_BACKEND_URL") : null;
-    if (cachedWorkingBackend && !userCustomBackend) {
+    const isFullStackContainer = typeof window !== "undefined" && 
+      (window.location.hostname === "localhost" || 
+       window.location.hostname === "127.0.0.1" || 
+       window.location.hostname.includes("run.app"));
+    
+    if (cachedWorkingBackend && !userCustomBackend && !isFullStackContainer) {
       primaryBackend = cachedWorkingBackend;
     }
 
