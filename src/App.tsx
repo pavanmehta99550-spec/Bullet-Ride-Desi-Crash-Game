@@ -2913,7 +2913,7 @@ export default function App() {
           .animate-infinite-scroll {
             display: flex;
             width: max-content;
-            animation: infinite-scroll 160s linear infinite;
+            animation: infinite-scroll 320s linear infinite;
           }
           .animate-infinite-scroll:hover {
             animation-play-state: paused;
