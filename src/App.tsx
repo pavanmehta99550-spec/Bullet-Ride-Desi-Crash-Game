@@ -15,7 +15,7 @@ import {
   signInWithEmailAndPassword, createUserWithEmailAndPassword,
   updateProfile
 } from 'firebase/auth';
-import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, doc, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
 import { SearchableCoinDropdown } from './components/SearchableCoinDropdown';
@@ -126,6 +126,11 @@ export default function App() {
   const [hasActiveBet, setHasActiveBet] = useState(false);
   const [winPopup, setWinPopup] = useState<{ amount: number; multiplier: number; coin: string } | null>(null);
   const [isMuted, setIsMuted] = useState(audioManager.getMutedState());
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [referralHistory, setReferralHistory] = useState<any[]>([]);
+  const [loadingReferralHistory, setLoadingReferralHistory] = useState(false);
   const [language, setLanguage] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('aviator_language');
@@ -211,6 +216,44 @@ export default function App() {
       setBetAmount(config.min * 10);
     }
   }, [activeCoin]);
+
+  useEffect(() => {
+    if (isProfileModalOpen && user?.uid) {
+      const fetchReferralHistory = async () => {
+        setLoadingReferralHistory(true);
+        try {
+          const q = query(
+            collection(db, "referral_logs"),
+            where("referrerUid", "==", user.uid)
+          );
+          const querySnapshot = await getDocs(q);
+          const logs: any[] = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            logs.push({
+              id: doc.id,
+              ...data,
+              dateStr: data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate().toLocaleString() : new Date(data.timestamp).toLocaleString()) : 'Just now'
+            });
+          });
+          // Sort by timestamp desc (newest first)
+          logs.sort((a, b) => {
+            const timeA = a.timestamp?.seconds || (a.timestamp ? new Date(a.timestamp).getTime() / 1000 : 0);
+            const timeB = b.timestamp?.seconds || (b.timestamp ? new Date(b.timestamp).getTime() / 1000 : 0);
+            return timeB - timeA;
+          });
+          setReferralHistory(logs);
+        } catch (err) {
+          console.error("Error fetching referral logs:", err);
+          setReferralHistory([]);
+        } finally {
+          setLoadingReferralHistory(false);
+        }
+      };
+
+      fetchReferralHistory();
+    }
+  }, [isProfileModalOpen, user?.uid]);
 
   const handleCoinChange = async (symbol: string) => {
     setActiveCoin(symbol);
@@ -1186,15 +1229,59 @@ export default function App() {
     }
   };
 
-  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
-  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [selectedCoin, setSelectedCoin] = useState<any | null>(null);
+  const [selectedCoin, setSelectedCoinState] = useState<any | null>(() => {
+    try {
+      const savedSymbol = localStorage.getItem('selected_crypto_coin_symbol');
+      if (savedSymbol) {
+        return { name: savedSymbol, symbol: savedSymbol, color: '#FFD700', address: '', isVisible: true };
+      }
+    } catch (_) {}
+    return null;
+  });
+
+  const setSelectedCoin = (coin: any | null) => {
+    setSelectedCoinState(coin);
+    try {
+      if (coin) {
+        localStorage.setItem('selected_crypto_coin_symbol', coin.symbol);
+      } else {
+        localStorage.removeItem('selected_crypto_coin_symbol');
+      }
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    try {
+      const savedSymbol = localStorage.getItem('selected_crypto_coin_symbol');
+      if (savedSymbol && coins && coins.length > 0) {
+        const found = coins.find(c => c.symbol === savedSymbol);
+        if (found) {
+          setSelectedCoinState(found);
+        }
+      }
+    } catch (_) {}
+  }, [coins]);
   const [withdrawInput, setWithdrawInput] = useState('500');
   const [depositAmountInput, setDepositAmountInput] = useState('500');
   const [depositTxId, setDepositTxId] = useState('');
   const [userWithdrawAddress, setUserWithdrawAddress] = useState('');
-  const [withdrawStep, setWithdrawStep] = useState<'coin' | 'amount'>('coin');
+  const [withdrawStep, setWithdrawStep] = useState<'coin' | 'amount'>(() => {
+    try {
+      const savedSymbol = localStorage.getItem('selected_crypto_coin_symbol');
+      if (savedSymbol) return 'amount';
+    } catch (_) {}
+    return 'coin';
+  });
+
+  useEffect(() => {
+    if (isWithdrawModalOpen) {
+      if (selectedCoin) {
+        setWithdrawStep('amount');
+      } else {
+        setWithdrawStep('coin');
+      }
+    }
+  }, [isWithdrawModalOpen, selectedCoin]);
 
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawInput);
@@ -1241,8 +1328,7 @@ export default function App() {
         updateUserBalance(user.uid, coinBalance - amount, selectedCoin.symbol);
         setWithdrawableBalance(prev => Math.max(0, prev - amount));
         setIsWithdrawModalOpen(false);
-        setSelectedCoin(null);
-        setWithdrawStep('coin');
+        setWithdrawStep('amount');
         setUserWithdrawAddress('');
         showAdminStatus("Withdrawal Request Sent! 💸");
       } else {
@@ -1277,7 +1363,6 @@ export default function App() {
       });
       if (res.ok) {
         setIsDepositModalOpen(false);
-        setSelectedCoin(null);
         setDepositTxId('');
         showAdminStatus("Deposit Request Sent! Admin verify karega. ⏳", 'success', 5000);
       }
@@ -2943,6 +3028,60 @@ export default function App() {
                   )}
                 </div>
 
+                {/* Referral Earnings History Section */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black uppercase italic text-[#FFD700] tracking-widest flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Gift className="w-4 h-4 text-[#FFD700]" />
+                      Referral Earnings History (Kamai Record)
+                    </span>
+                    {referralHistory.length > 0 && (
+                      <span className="text-[10px] bg-[#FFD700]/10 text-[#FFD700] px-2 py-0.5 rounded-full font-mono font-bold">
+                        {referralHistory.length} Refs
+                      </span>
+                    )}
+                  </h4>
+                  <div className="bg-black/40 border border-zinc-800 rounded-2xl overflow-hidden p-1.5">
+                    {loadingReferralHistory ? (
+                      <div className="p-6 text-center flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="w-5 h-5 animate-spin text-[#FFD700]" />
+                        <p className="text-zinc-500 text-[10px] uppercase font-bold tracking-wider">Loading referral earnings...</p>
+                      </div>
+                    ) : referralHistory.length > 0 ? (
+                      <div className="max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-[#1c1c1c] text-zinc-500 uppercase text-[9px] tracking-wider sticky top-0 z-10 rounded-lg">
+                            <tr>
+                              <th className="p-2.5">User</th>
+                              <th className="p-2.5">Date</th>
+                              <th className="p-2.5 text-right">Bonus (Pts)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-800/60 text-[11px]">
+                            {referralHistory.map((item) => (
+                              <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                                <td className="p-2.5 font-bold text-zinc-300">
+                                  <div className="text-zinc-200 truncate max-w-[140px] sm:max-w-xs">{item.newUserEmail || "Hidden / Anonymous"}</div>
+                                  <div className="text-[9px] text-zinc-500 font-mono font-normal select-all">ID: {item.newUserId}</div>
+                                </td>
+                                <td className="p-2.5 font-mono text-zinc-400">{item.dateStr}</td>
+                                <td className="p-2.5 font-mono font-black text-right text-yellow-400 italic">
+                                  +{item.referrerBonus || 500}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="p-6 text-center space-y-1">
+                        <p className="text-zinc-500 text-xs italic">Koi referral kamai nahi hui hai abhi tak. 😔</p>
+                        <p className="text-[#FFD700]/70 text-[10px] uppercase tracking-wider font-semibold">Share your link to earn 500 points per registration!</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl flex justify-between items-center px-4">
                    <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest font-sans">User ID (UID)</p>
                    <p className="text-[9px] font-mono text-zinc-500 select-all">{user?.uid}</p>
@@ -3031,7 +3170,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => { setIsDepositModalOpen(false); setSelectedCoin(null); }}
+              onClick={() => { setIsDepositModalOpen(false); }}
               className="absolute inset-0 bg-black/90 backdrop-blur-md"
             />
             <motion.div 
@@ -3045,7 +3184,7 @@ export default function App() {
                   <h3 className="text-3xl font-black italic uppercase text-[#FFD700]">Crypto Deposit 🪙</h3>
                   <p className="text-zinc-500 text-xs mt-1 uppercase tracking-widest font-bold">Instantly fuel your Bullet Ride</p>
                 </div>
-                <button onClick={() => { setIsDepositModalOpen(false); setSelectedCoin(null); }} className="text-zinc-500 hover:text-white bg-zinc-800/50 p-2 rounded-full">✕</button>
+                <button onClick={() => { setIsDepositModalOpen(false); }} className="text-zinc-500 hover:text-white bg-zinc-800/50 p-2 rounded-full">✕</button>
               </div>
 
               {!selectedCoin ? (
@@ -3174,7 +3313,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => { setIsWithdrawModalOpen(false); setSelectedCoin(null); setWithdrawStep('coin'); }}
+              onClick={() => { setIsWithdrawModalOpen(false); }}
               className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             />
             <motion.div 
@@ -3188,7 +3327,7 @@ export default function App() {
                   <h3 className="text-2xl font-black italic uppercase text-[#FFD700]">Withdraw Profit 💸</h3>
                   <p className="text-zinc-500 text-[10px] uppercase tracking-widest font-bold">Fast crypto payouts</p>
                 </div>
-                <button onClick={() => { setIsWithdrawModalOpen(false); setSelectedCoin(null); setWithdrawStep('coin'); }} className="text-zinc-500 hover:text-white bg-zinc-800/50 p-2 rounded-full">✕</button>
+                <button onClick={() => { setIsWithdrawModalOpen(false); }} className="text-zinc-500 hover:text-white bg-zinc-800/50 p-2 rounded-full">✕</button>
               </div>
 
               {withdrawStep === 'coin' ? (
@@ -3267,7 +3406,7 @@ export default function App() {
 
                     <div className="flex gap-4 pt-4">
                       <button 
-                        onClick={() => { setIsWithdrawModalOpen(false); setSelectedCoin(null); setWithdrawStep('coin'); }}
+                        onClick={() => { setIsWithdrawModalOpen(false); }}
                         className="flex-1 py-4 bg-zinc-800 text-white font-black uppercase text-xs hover:bg-zinc-700 transition-all rounded"
                       >
                         Cancel
