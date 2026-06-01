@@ -209,7 +209,7 @@ export default function App() {
     if (winPopup) {
       const timer = setTimeout(() => {
         setWinPopup(null);
-      }, 2000);
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, [winPopup]);
@@ -4185,50 +4185,87 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          {/* Cashout Success / Win Popup (Compact side pop toast) */}
+          {/* Centered Large Cashout Success / Win Popup (Prominent Overlay) */}
           <AnimatePresence>
             {winPopup && (
               <motion.div
-                initial={{ opacity: 0, x: 100, scale: 0.8 }}
+                initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ 
                   opacity: 1, 
-                  x: 0,
                   scale: 1,
-                  transition: { type: "spring", stiffness: 350, damping: 20 }
+                  transition: { type: "spring", stiffness: 300, damping: 22 }
                 }}
-                exit={{ opacity: 0, x: 100, scale: 0.8 }}
-                className="absolute top-4 right-4 z-40 bg-[#16A34A] p-4 text-white border-2 border-black shadow-[6px_6px_0_rgba(0,0,0,1)] flex items-center gap-3.5 max-w-[95vw] w-[340px] rounded-xl pointer-events-auto"
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="absolute inset-0 flex items-center justify-center bg-black/75 z-40 p-4 pointer-events-auto"
               >
-                <div className="text-3xl animate-bounce shrink-0">🏆</div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-sm font-black uppercase tracking-tight text-yellow-300 truncate">
-                      {t.successfulClaims}
-                    </h4>
-                    <span className="font-mono text-xs font-black bg-black/30 px-1.5 py-0.5 rounded text-yellow-300 shrink-0">
-                      {winPopup.multiplier.toFixed(2)}x
+                <div className="bg-[#15803D] border-4 border-[#FFD700] rounded-2xl p-6 sm:p-8 text-center max-w-[90vw] w-[350px] sm:w-[380px] shadow-[0_0_50px_rgba(34,197,94,0.6)] relative flex flex-col items-center">
+                  
+                  {/* Fire gradients */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#16A34A]/20 to-transparent pointer-events-none rounded-2xl animate-pulse" />
+
+                  {/* Badges/Trophy icons */}
+                  <div className="absolute -top-10 text-5xl animate-bounce">🏆</div>
+                  <div className="absolute -left-3 top-1/2 -translate-y-1/2 text-2xl animate-pulse">🎉</div>
+                  <div className="absolute -right-3 top-1/2 -translate-y-1/2 text-2xl animate-pulse">🎉</div>
+
+                  {/* Header text */}
+                  <div className="bg-black/40 px-3.5 py-1.5 rounded-full border border-yellow-300/40 text-yellow-300 text-[10px] sm:text-xs font-black uppercase tracking-widest mb-3 flex items-center justify-center gap-1">
+                    <Trophy className="w-3.5 h-3.5 text-[#FFD700] shrink-0 animate-spin" style={{ animationDuration: '3s' }} />
+                    <span>
+                      {language === 'hi' ? 'बधाई हो - आप जीत गए!' : language === 'hinglish' ? 'CONGRATULATIONS - YOU WIN!' : 'CONGRATULATIONS - YOU WON!'}
                     </span>
                   </div>
-                  <div className="mt-1 flex items-baseline justify-between gap-1">
-                    <span className="text-[10px] text-zinc-100 font-semibold uppercase tracking-wider">{t.winAmount}</span>
-                    <span className="font-mono font-black text-base text-yellow-100">
+
+                  {/* Multiplier achieved */}
+                  <div className="text-[#FFD700] font-mono font-black italic text-xl sm:text-2xl mt-1 tracking-tight">
+                    {winPopup.multiplier.toFixed(2)}x <span className="text-white text-xs not-italic font-normal">MULTIPLIER</span>
+                  </div>
+
+                  {/* Label */}
+                  <div className="text-zinc-200 font-bold uppercase tracking-widest text-[9px] sm:text-[10px] mt-4 mb-1">
+                    {language === 'hi' ? 'कुल जीत की राशि' : 'TOTAL WINNING AMOUNT'}
+                  </div>
+                  
+                  {/* Large Shiny amount */}
+                  <div className="flex flex-col items-center">
+                    <div className="text-white font-mono font-black text-3xl sm:text-4xl text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-white to-yellow-100 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] select-all leading-tight">
                       {winPopup.coin === 'INR' ? '₹' : ''}
-                      {winPopup.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                      {winPopup.amount.toLocaleString(undefined, { 
+                        minimumFractionDigits: winPopup.coin === 'INR' ? 2 : Math.min(4, cryptoConfig[winPopup.coin]?.decimals || 4), 
+                        maximumFractionDigits: winPopup.coin === 'INR' ? 2 : (cryptoConfig[winPopup.coin]?.decimals || 8)
+                      })}
                       {winPopup.coin !== 'INR' ? ` ${winPopup.coin}` : ''}
-                    </span>
+                    </div>
+                    {winPopup.coin !== 'INR' && rates[winPopup.coin] && (
+                      <div className="text-xs sm:text-sm text-yellow-300 font-bold font-mono tracking-tight bg-black/30 px-3 py-0.5 rounded-full mt-1.5 border border-yellow-300/10 flex items-center gap-1 shadow-sm">
+                        <span>≈</span>
+                        <span>{calculateFiatValue(winPopup.amount, winPopup.coin, rates)}</span>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[9px] text-emerald-100 font-medium tracking-wide mt-1 italic flex items-center gap-1">
+
+                  {/* Fuel Added Message */}
+                  <p className="text-[10px] text-emerald-100 font-bold tracking-wide italic flex items-center justify-center gap-1.5 bg-black/20 py-2 px-3 rounded-lg w-full mt-4">
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse shrink-0" />
-                    {t.fuelAddedSuccess}
+                    {language === 'hi' ? 'बैलेंस आपके वॉलेट में जोड़ दिया गया है! ⛽' : language === 'hinglish' ? 'Fuel balance successfully add ho gaya! ⛽' : 'FUEL BALANCE ADDED SUCCESSFULLY! ⛽'}
                   </p>
+
+                  {/* Button to quickly keep playing */}
+                  <button 
+                    onClick={() => setWinPopup(null)}
+                    className="mt-5 w-full bg-yellow-400 hover:bg-yellow-350 active:scale-95 text-black font-black uppercase tracking-wider text-xs py-2.5 px-6 rounded-lg transition-all shadow-[0_4px_12px_rgba(255,215,0,0.3)] border-b-4 border-yellow-600 hover:border-yellow-700 active:border-b-0 cursor-pointer"
+                  >
+                    {language === 'hi' ? 'सवारी जारी रखें 🏍️' : language === 'hinglish' ? 'RIDE CHALU RAKHO 🏍️' : 'KEEP RIDING 🏍️'}
+                  </button>
+
+                  {/* absolute dismiss X button */}
+                  <button
+                    onClick={() => setWinPopup(null)}
+                    className="absolute top-3 right-3 text-white/50 hover:text-white transition-all p-1 bg-black/20 hover:bg-black/40 rounded-full cursor-pointer z-10"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                {/* Close Button */}
-                <button 
-                  onClick={() => setWinPopup(null)}
-                  className="text-white/60 hover:text-white transition-all bg-black/10 hover:bg-black/35 p-1 rounded-full cursor-pointer shrink-0 self-start -mt-1 -mr-1"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
               </motion.div>
             )}
           </AnimatePresence>
