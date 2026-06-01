@@ -304,7 +304,7 @@ export async function saveGameHistory(userId: string, result: {
   multiplier: number;
   winAmount: number;
   status: 'win' | 'loss';
-}) {
+}, displayName?: string, coin?: string) {
   const gameId = Date.now().toString();
   const historyRef = doc(db, 'users', userId, 'history', gameId);
   
@@ -325,6 +325,22 @@ export async function saveGameHistory(userId: string, result: {
       ...result
     };
     await setDoc(historyRef, gameData);
+
+    // If it's a win, also save to topRiders collection
+    if (result.status === 'win') {
+      const topRiderRef = doc(db, 'topRiders', gameId);
+      await setDoc(topRiderRef, {
+        id: gameId,
+        uid: userId,
+        displayName: displayName || 'Rider',
+        multiplier: result.multiplier,
+        betAmount: result.betAmount,
+        winAmount: result.winAmount,
+        coin: coin || 'USDT',
+        createdAt: Date.now(),
+        timestamp: serverTimestamp()
+      });
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `users/${userId}/history/${gameId}`);
   }

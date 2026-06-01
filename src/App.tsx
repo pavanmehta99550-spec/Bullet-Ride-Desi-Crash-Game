@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldAlert, RefreshCw, Bike, Gauge, User, History, 
   ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2, X,
-  Volume2, VolumeX, Gift
+  Volume2, VolumeX, Gift, Trophy
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
@@ -131,6 +131,8 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [referralHistory, setReferralHistory] = useState<any[]>([]);
   const [loadingReferralHistory, setLoadingReferralHistory] = useState(false);
+  const [topRiders, setTopRiders] = useState<any[]>([]);
+  const [loadingTopRiders, setLoadingTopRiders] = useState(false);
   const [language, setLanguage] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('aviator_language');
@@ -254,6 +256,70 @@ export default function App() {
       fetchReferralHistory();
     }
   }, [isProfileModalOpen, user?.uid]);
+  // Listen to Top Riders in Real-Time (Highest Multipliers in last 24h)
+  useEffect(() => {
+    let isCurrent = true;
+    setLoadingTopRiders(true);
+    
+    const q = query(
+      collection(db, 'topRiders'),
+      orderBy('multiplier', 'desc'),
+      limit(50)
+    );
+    
+    const unsub = onSnapshot(q, (snapshot) => {
+      if (!isCurrent) return;
+      
+      const list = snapshot.docs.map(doc => {
+        const data = doc.data();
+        let timeStr = 'Just now';
+        let dateObj: Date;
+        
+        if (data.createdAt) {
+          dateObj = new Date(data.createdAt);
+        } else if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+          dateObj = data.timestamp.toDate();
+        } else {
+          dateObj = new Date();
+        }
+        
+        try {
+          timeStr = dateObj.toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true 
+          });
+        } catch (_) {}
+
+        return {
+          id: doc.id,
+          ...data,
+          time: timeStr
+        };
+      });
+
+      // Filter in-memory for the last 24 hours
+      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      const last24h = list.filter((item: any) => {
+        const itemTime = item.createdAt || (item.timestamp?.seconds ? item.timestamp.seconds * 1000 : Date.now());
+        return itemTime >= oneDayAgo;
+      });
+
+      // If we have records in the last 24 hours, use them, otherwise fall back to top 50 overall
+      const finalRiders = last24h.length > 0 ? last24h : list;
+
+      setTopRiders(finalRiders);
+      setLoadingTopRiders(false);
+    }, (err) => {
+      console.warn("[FIREBASE] topRiders sync error:", err.message);
+      setLoadingTopRiders(false);
+    });
+
+    return () => {
+      isCurrent = false;
+      unsub();
+    };
+  }, []);
 
   const handleCoinChange = async (symbol: string) => {
     setActiveCoin(symbol);
@@ -1009,7 +1075,7 @@ export default function App() {
           multiplier: currentMult,
           winAmount,
           status: 'win'
-      });
+      }, currentUser.displayName || 'Rider', activeCoinRef.current);
     }
     
     console.log(`[GAME] Cashed out at ${currentMult}x for ₹${winAmount}`);
@@ -3516,25 +3582,36 @@ export default function App() {
           <div className="flex border-b border-[#333] bg-[#111]">
             <button 
               onClick={() => setHistoryTab('global')}
-              className={`flex-1 py-3.5 text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1.5 border-b-2 ${
+              className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
                 historyTab === 'global' 
                   ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
                   : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
               }`}
             >
-              <History className="w-3.5 h-3.5" />
+              <History className="w-3 h-3" />
               Pit Stops
             </button>
             <button 
               onClick={() => setHistoryTab('personal')}
-              className={`flex-1 py-3.5 text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1.5 border-b-2 ${
+              className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
                 historyTab === 'personal' 
                   ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
                   : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
               }`}
             >
-              <User className="w-3.5 h-3.5" />
+              <User className="w-3 h-3" />
               My Rides
+            </button>
+            <button 
+              onClick={() => setHistoryTab('top')}
+              className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
+                historyTab === 'top' 
+                  ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
+                  : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
+              }`}
+            >
+              <Trophy className="w-3 h-3 text-[#FFD700]" />
+              Top Riders
             </button>
           </div>
 
@@ -3581,7 +3658,7 @@ export default function App() {
                     </div>
                   )}
                 </motion.div>
-              ) : (
+              ) : historyTab === 'personal' ? (
                 <motion.div
                   key="personal-history-list"
                   initial={{ opacity: 0, x: 10 }}
@@ -3628,6 +3705,75 @@ export default function App() {
                   {isMyHistoryLoading && (
                     <div className="flex justify-center py-8">
                       <RefreshCw className="w-5 h-5 text-zinc-700 animate-spin" />
+                    </div>
+                  )}
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="top-riders-history-list"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.15 }}
+                  className="space-y-2.5"
+                >
+                  <p className="text-[10px] uppercase tracking-widest font-black text-zinc-500 mb-1.5 border-b border-zinc-800 pb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-1 text-[#FFD700]">🏆 Past 24 Hours</span>
+                    <span className="text-zinc-500 font-mono text-[9px] normal-case font-normal">Sorted by Multiplier</span>
+                  </p>
+                  {topRiders.map((item, idx) => {
+                    const isGold = idx === 0;
+                    const isSilver = idx === 1;
+                    const isBronze = idx === 2;
+                    return (
+                      <motion.div 
+                        key={item.id}
+                        initial={{ x: -20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        className={`flex flex-col p-3 bg-[#1A1A1A] border-l-4 rounded-r shadow-md transition-colors hover:bg-[#222] ${
+                          isGold 
+                            ? 'border-[#FFD700]' 
+                            : isSilver 
+                              ? 'border-zinc-400' 
+                              : isBronze 
+                                ? 'border-amber-700' 
+                                : 'border-zinc-800'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs text-zinc-200 font-black truncate max-w-[125px] flex items-center gap-1 leading-normal">
+                            {isGold && <span className="text-sm shrink-0">🥇</span>}
+                            {isSilver && <span className="text-sm shrink-0">🥈</span>}
+                            {isBronze && <span className="text-sm shrink-0">🥉</span>}
+                            {!isGold && !isSilver && !isBronze && <span className="text-[10px] text-zinc-500 font-mono font-bold shrink-0">#{idx + 1}</span>}
+                            <span className="truncate">{item.displayName || 'Rider'}</span>
+                          </span>
+                          <span className="text-sm font-black text-[#FFD700] tracking-tight italic select-all font-mono">
+                            {item.multiplier ? Number(item.multiplier).toFixed(2) : '1.00'}x
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center text-[10px] text-zinc-400 mt-1 pb-0.5 pt-1 border-t border-zinc-800/40">
+                          <span className="font-sans text-[10px] leading-none">
+                            Payout: <strong className="text-emerald-400 font-mono font-black">
+                              {item.coin === 'INR' ? '₹' : ''}
+                              {Number(item.winAmount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                              {item.coin !== 'INR' ? ` ${item.coin}` : ''}
+                            </strong>
+                          </span>
+                          <span className="text-[9px] text-zinc-600 font-mono shrink-0 leading-none">{item.time}</span>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                  {topRiders.length === 0 && !loadingTopRiders && (
+                    <div className="text-center py-8 text-zinc-600 italic text-xs">
+                      No legendary rides recorded yet!<br/>Be the first to hit the list!
+                    </div>
+                  )}
+                  {loadingTopRiders && (
+                    <div className="flex justify-center py-8">
+                      <RefreshCw className="w-5 h-5 text-[#FFD700] animate-spin" />
                     </div>
                   )}
                 </motion.div>
