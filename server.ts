@@ -935,10 +935,40 @@ async function startServer() {
 
         if (adjusted) {
           globalRound.crashPoint = cp;
-          if (cp < 1.40) {
-            globalRound.crashReason = "High Stakes Engine Limit Exceeded! ⚠️";
+          if (cp < 1.4) {
+            const earlyCrashScenarios = [
+              "Engine sudden misfire! 🔧🛑",
+              "Achanak brake lagana pada! 🛑🚴‍♂️",
+              "Clutch wire toot gaya! ⛓️🔩",
+              "Sprocket slip ho gaya! ⚙️⚠️",
+              "Peeche se gaadi ne touch kar diya! 💥🚗",
+              "Bike achanak slip ho gayi! 🛣️😰",
+              "Mama ne samne danda dikha diya! 👮‍♂️🛑",
+              "Phone gir gaya pocket se! 📱💨",
+              "Engine se achanak sound aaya! 🔊🔥",
+              "Gear shaft stuck ho gaya! ⚙️❌",
+              "Challan kat gaya instant! 👮‍♂️🧾",
+              "Aage naaka bandi chal rahi hai! 🚨🛑",
+              "Kutte piche pad gaye achanak! 🐕🏃‍♂️"
+            ];
+            globalRound.crashReason = earlyCrashScenarios[Math.floor(Math.random() * earlyCrashScenarios.length)];
           } else {
-            globalRound.crashReason = "Safe Low-Stakes Fuel Empty! ⛽";
+            const normalCrashScenarios = [
+              "Sasta petrol dalwaya tha, engine bol gaya! ⛽😅",
+              "Raste me JCB ki khudai chal rahi hai! 🚜🚧",
+              "Chai tapri dekhkar dosto ne rukwa liya! ☕🍪",
+              "Papa ki pari ne red light par takkar maar di! 🛴🤦‍♂️",
+              "Pothole me tyre puncture ho gaya! 🕳️📌",
+              "Coolant leak ho gaya, engine lock! 🌡️🔧",
+              "Garam chai tapri pe rone lage dost! 🪔☕",
+              "Google Maps ne khet mein ghusa diya! 🗺️🌾",
+              "Chain spool out ho gaya! ⛓️💨",
+              "Speedbreaker par dhoom macha di! 🚧💥",
+              "Saand samne se aa gaya doudte hue! 🐂🏃‍♂️",
+              "Tyre slip ho gaya gilli mitti par! 🌧️🏍️",
+              "Bike over-heat ho gayi highway par! 🔥🛣️"
+            ];
+            globalRound.crashReason = normalCrashScenarios[Math.floor(Math.random() * normalCrashScenarios.length)];
           }
           console.log(`[RISK CONTROL] Total bet: $${totalBetsUsd.toFixed(4)} USD (≈ ₹${totalBetsInr.toFixed(2)} INR) on Round ${globalRound.roundId}. Adjusted crash point from ${originalCp}x to ${cp}x: ${globalRound.crashReason}`);
         }

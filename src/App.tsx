@@ -123,6 +123,7 @@ export default function App() {
   const [globalCountdown, setGlobalCountdown] = useState<number>(0);
   const [isBetQueued, setIsBetQueued] = useState(false);
   const [hasActiveBet, setHasActiveBet] = useState(false);
+  const [winPopup, setWinPopup] = useState<{ amount: number; multiplier: number; coin: string } | null>(null);
   const [isMuted, setIsMuted] = useState(audioManager.getMutedState());
 
   const toggleSound = () => {
@@ -320,6 +321,7 @@ export default function App() {
         globalRoundIdRef.current = data.roundId;
         setHasCashedOut(false);
         setCashedOutMultiplier(null);
+        setWinPopup(null);
         setMultiplierPoints([{ x: 0, y: 1.00 }]);
         
         // Place Queued Bet (only if not already placed manually during countdown)
@@ -930,6 +932,13 @@ export default function App() {
       updateUserBalance(currentUser.uid, newBalance, activeCoinRef.current);
       // Add only current profit to withdrawable tracking
       setWithdrawableBalance(prev => prev + winAmount);
+      
+      // Trigger the premium green success popup
+      setWinPopup({
+        amount: winAmount,
+        multiplier: currentMult,
+        coin: activeCoinRef.current
+      });
       
       // Save to Firestore History
       saveGameHistory(currentUser.uid, {
@@ -3694,6 +3703,61 @@ export default function App() {
                     <ShieldAlert className="w-6 h-6" /> CRASHED!
                   </h3>
                   <p className="text-lg italic font-serif leading-tight">"{crashReason}"</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Cashout Success / Win Popup */}
+          <AnimatePresence>
+            {winPopup && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.5, y: -100 }}
+                animate={{ 
+                  opacity: 1, 
+                  scale: 1, 
+                  y: 0,
+                  transition: { type: "spring", stiffness: 300, damping: 15 }
+                }}
+                exit={{ opacity: 0, scale: 0.8, y: 50 }}
+                className="absolute top-1/2 -translate-y-1/2 z-30 bg-[#16A34A] px-8 py-6 text-white border-4 border-black shadow-[10px_10px_0_rgba(0,0,0,1)] flex flex-col sm:flex-row items-center gap-5 max-w-[95vw] sm:max-w-md w-full relative pointer-events-auto"
+              >
+                {/* Close Button */}
+                <button 
+                  onClick={() => setWinPopup(null)}
+                  className="absolute top-2.5 right-2.5 text-white/70 hover:text-white transition-all bg-black/20 hover:bg-black/40 p-1 rounded-full cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                
+                <div className="text-5xl animate-bounce shrink-0">🏆</div>
+                <div className="text-center sm:text-left flex-1 min-w-0">
+                  <h3 className="text-xl font-black uppercase tracking-tight flex items-center justify-center sm:justify-start gap-1.5 text-yellow-300">
+                    🎉 SUCCESSFUL CLAIMS!
+                  </h3>
+                  <div className="mt-1 space-y-1.5">
+                    <p className="text-zinc-100 text-xs font-semibold italic">
+                      "Sahi time par ride exiting! Badhiya control, bhai!" 🏍️
+                    </p>
+                    <div className="flex flex-col gap-1 pr-1.5 w-full">
+                      <div className="text-[10px] text-green-100 bg-white/10 px-2 py-1 rounded font-mono flex items-center justify-between">
+                        <span>EXIT MULTIPLIER:</span>
+                        <span className="font-black text-yellow-300">{winPopup.multiplier.toFixed(2)}x</span>
+                      </div>
+                      <div className="text-xs text-white bg-green-900/50 px-2 py-1.5 rounded font-sans flex items-center justify-between border border-green-400/20">
+                        <span>WIN AMOUNT:</span>
+                        <span className="font-mono font-black text-lg text-yellow-300 animate-pulse">
+                          {winPopup.coin === 'INR' ? '₹' : ''}
+                          {winPopup.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                          {winPopup.coin !== 'INR' ? ` ${winPopup.coin}` : ''}
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-emerald-200 text-center uppercase tracking-wider pt-0.5 flex items-center justify-center gap-1 font-bold">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse" />
+                        Fuel Balance Added Successfully! ⛽
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
