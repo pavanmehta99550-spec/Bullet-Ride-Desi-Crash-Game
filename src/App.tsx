@@ -23,6 +23,7 @@ import { cryptoConfig } from './lib/cryptoConfig';
 import { formatBetAmount, calculateFiatValue } from './lib/conversion';
 import { audioManager } from './lib/audio';
 import { translations } from './lib/translations';
+import { initial100Riders, allCountriesWithFlags, allFirstNames, allLastNameSuffixes, CountryRider } from './countries';
 
 interface GameHistory {
   id: string | number;
@@ -133,6 +134,7 @@ export default function App() {
   const [loadingReferralHistory, setLoadingReferralHistory] = useState(false);
   const [topRiders, setTopRiders] = useState<any[]>([]);
   const [loadingTopRiders, setLoadingTopRiders] = useState(false);
+  const [marqueeRiders, setMarqueeRiders] = useState<CountryRider[]>(initial100Riders);
   const [language, setLanguage] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('aviator_language');
@@ -1076,6 +1078,29 @@ export default function App() {
           winAmount,
           status: 'win'
       }, currentUser.displayName || 'Rider', activeCoinRef.current);
+
+      // Prepend user win to Marquee Riders list
+      try {
+        const coinConfig = allCountriesWithFlags.find(c => c.coin === activeCoinRef.current) || { flag: "🪙", country: "Global", displayPrefix: "" };
+        const userWinner: CountryRider = {
+          id: `user-win-${Date.now()}`,
+          flag: coinConfig.flag,
+          country: coinConfig.country,
+          displayName: currentUser.displayName || 'You',
+          multiplier: Number(currentMult.toFixed(2)),
+          winAmount: Math.floor(winAmount),
+          coin: activeCoinRef.current,
+          isLive: true,
+          timestamp: Date.now()
+        };
+        setMarqueeRiders(prev => {
+          const updated = [userWinner, ...prev];
+          if (updated.length > 100) return updated.slice(0, 100);
+          return updated;
+        });
+      } catch (err) {
+        console.warn("Failed to add user's win to marquee ribbon:", err);
+      }
     }
     
     console.log(`[GAME] Cashed out at ${currentMult}x for ₹${winAmount}`);
@@ -1167,6 +1192,54 @@ export default function App() {
       }
     };
   }, [isPlaying, isCrashed]);
+
+  // Real-Time Ticker & Simulated Multi-Country Winners Loop
+  useEffect(() => {
+    if (globalStatus !== 'IN_PROGRESS' || !isPlaying || isCrashed) return;
+
+    // Every 1 to 3.5 seconds, model other players from around the world cashing out
+    const interval = setInterval(() => {
+      try {
+        // Pick a random country from the pool of 100
+        const randomCountry = allCountriesWithFlags[Math.floor(Math.random() * allCountriesWithFlags.length)];
+        
+        // Let's form a random username for them
+        const fName = allFirstNames[Math.floor(Math.random() * allFirstNames.length)];
+        const lSuffix = allLastNameSuffixes[Math.floor(Math.random() * allLastNameSuffixes.length)];
+        const username = `${fName}${lSuffix}`;
+        
+        // Give them a realistic bet amount and calculate their payout with the current multiplier
+        const rBet = Math.floor(Math.random() * 4500) + 500; // between 500 and 5000
+        const currentMult = multiplierRef.current;
+        const payout = rBet * currentMult;
+
+        const newWinner: CountryRider = {
+          id: `sim-${Date.now()}-${Math.random()}`,
+          flag: randomCountry.flag,
+          country: randomCountry.country,
+          displayName: username,
+          multiplier: Number(currentMult.toFixed(2)),
+          winAmount: Math.floor(payout),
+          coin: randomCountry.coin,
+          isLive: true,
+          timestamp: Date.now()
+        };
+
+        // Prepend this live winner to our top ribbon so they scroll past live!
+        setMarqueeRiders(prev => {
+          const updated = [newWinner, ...prev];
+          if (updated.length > 100) {
+            return updated.slice(0, 100);
+          }
+          return updated;
+        });
+      } catch (err) {
+        console.warn("Simulator error:", err);
+      }
+    }, Math.floor(Math.random() * 2500) + 1200);
+
+    return () => clearInterval(interval);
+  }, [globalStatus, isPlaying, isCrashed]);
 
   const toggleAutoPlay = () => {
     const nextVal = !isAutoPlay;
@@ -2783,6 +2856,71 @@ export default function App() {
         )}
       </AnimatePresence>
       
+      {/* Dynamic Top Marquee Slider */}
+      <div className="bg-[#0A0A0A] border-b border-[#222] h-11 overflow-hidden select-none flex items-center relative z-40">
+        <div className="absolute left-0 top-0 bottom-0 bg-[#FFD700] px-3.5 flex items-center text-black font-black uppercase italic tracking-wider text-[10px] sm:text-xs z-10 border-r border-[#FFD700]/40 shadow-[4px_0_12px_rgba(0,0,0,0.6)]">
+          <Trophy className="w-3.5 h-3.5 mr-1 text-black shrink-0 animate-bounce" />
+          <span className="hidden xs:inline">GLOBAL </span>HIGH ROLLERS
+        </div>
+        
+        {/* Continuous Scrolling Marquee Track */}
+        <div className="flex-1 overflow-hidden relative flex items-center h-full pl-32 sm:pl-36">
+          <div className="flex gap-4 sm:gap-6 whitespace-nowrap animate-infinite-scroll">
+            {[...marqueeRiders, ...marqueeRiders].map((item, idx) => {
+              const formattedAmount = item.winAmount.toLocaleString(undefined, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+              });
+              
+              return (
+                <div 
+                  key={`${item.id}-${idx}`} 
+                  className={`inline-flex items-center gap-1.5 text-[10px] sm:text-xs text-zinc-300 font-bold px-2.5 py-1 bg-[#121212] border rounded-full transition-all hover:bg-zinc-900 border-[#1A1A1A] ${
+                    item.isLive 
+                      ? 'shadow-[0_0_8px_rgba(34,197,94,0.3)] border-green-500 bg-[#0E1A12]' 
+                      : ''
+                  }`}
+                  title={`${item.displayName} from ${item.country}`}
+                >
+                  <span className="text-xs sm:text-sm shrink-0">{item.flag}</span>
+                  <span className="text-zinc-500 font-bold text-[9px] sm:text-[10px]">{item.country}</span>
+                  <span className={`font-black truncate max-w-[90px] ${item.isLive ? 'text-green-400' : 'text-zinc-100'}`}>{item.displayName}</span>
+                  
+                  {item.isLive && (
+                    <span className="inline-flex items-center gap-1 bg-green-500/20 text-green-400 text-[8px] font-black uppercase px-1 rounded border border-green-500/40 animate-pulse">
+                      Live
+                    </span>
+                  )}
+
+                  <span className="text-[#FFD700] font-black italic">{item.multiplier.toFixed(2)}x</span>
+                  
+                  <span className="text-emerald-400 font-mono font-black text-[10px] sm:text-[11px]">
+                    {item.coin === 'INR' ? '₹' : item.coin === 'USD' || item.coin === 'USDT' ? '$' : `${item.coin} `}
+                    {formattedAmount}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        
+        {/* Style Tag for Smooth Scrolling without complex setup */}
+        <style>{`
+          @keyframes infinite-scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+          .animate-infinite-scroll {
+            display: flex;
+            width: max-content;
+            animation: infinite-scroll 160s linear infinite;
+          }
+          .animate-infinite-scroll:hover {
+            animation-play-state: paused;
+          }
+        `}</style>
+      </div>
+
       {/* Header Section */}
       <header className="flex items-center justify-between p-4 md:p-6 bg-gradient-to-r from-[#1A1A1A] to-[#0F0F0F] border-b border-[#333] sticky top-0 z-30">
         <div className="flex items-center gap-4">
