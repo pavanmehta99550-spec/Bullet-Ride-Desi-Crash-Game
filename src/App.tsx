@@ -1015,6 +1015,23 @@ export default function App() {
       return;
     }
 
+    // Validate bet limits
+    const currentCoin = activeCoinRef.current;
+    const coinConfig = cryptoConfig[currentCoin];
+    const userBet = betAmountRef.current;
+    if (coinConfig) {
+      if (userBet < coinConfig.min) {
+        setError(language === 'hi' ? `न्यूनतम दांव ${coinConfig.min} ${currentCoin} है।` : language === 'hinglish' ? `Minimum bet limit ${coinConfig.min} ${currentCoin} hai bhae.` : `Minimum bet is ${coinConfig.min} ${currentCoin}.`);
+        setTimeout(() => setError(null), 3500);
+        return;
+      }
+      if (userBet > coinConfig.maxBet) {
+        setError(language === 'hi' ? `अधिकतम दांव ${coinConfig.maxBet} ${currentCoin} है।` : language === 'hinglish' ? `Maximum bet limit ${coinConfig.maxBet} ${currentCoin} hai bhae.` : `Maximum bet is ${coinConfig.maxBet} ${currentCoin}.`);
+        setTimeout(() => setError(null), 3500);
+        return;
+      }
+    }
+
     // Queue Bet for next round
     if (globalStatus === 'WAITING') {
        if (balanceRef.current >= betAmountRef.current) {
@@ -1051,7 +1068,19 @@ export default function App() {
 
     const currentBet = betAmountRef.current;
     const currentBal = balanceRef.current;
-    const winAmount = Math.floor(currentBet * currentMult);
+    
+    // Properly format and round win amounts for cryptocurrencies based on decimals
+    const coinConfig = cryptoConfig[activeCoinRef.current] || { decimals: 2, maxBet: 50000 };
+    const decimals = coinConfig.decimals;
+    const rawWinAmount = currentBet * currentMult;
+    let winAmount = parseFloat(rawWinAmount.toFixed(decimals));
+
+    // Cap maximum single win to prevent massive exploits on high value crypto coins
+    const ultimateMaxWin = coinConfig.maxBet * 50;
+    if (winAmount > ultimateMaxWin) {
+      winAmount = ultimateMaxWin;
+      console.log(`[SAFEGUARD] Win amount clamped at limit of ${ultimateMaxWin} ${activeCoinRef.current}`);
+    }
     
     setHasCashedOut(true);
     setCashedOutMultiplier(currentMult);
@@ -1088,7 +1117,7 @@ export default function App() {
           country: coinConfig.country,
           displayName: currentUser.displayName || 'You',
           multiplier: Number(currentMult.toFixed(2)),
-          winAmount: Math.floor(winAmount),
+          winAmount: winAmount,
           coin: activeCoinRef.current,
           isLive: true,
           timestamp: Date.now()
@@ -4385,6 +4414,25 @@ export default function App() {
                 setShowAuthModal(true);
                 return;
               }
+
+              // Evaluate limits only if we are NOT performing a cash out action
+              const isCashOutAction = isPlaying && hasActiveBet && !hasCashedOut;
+              if (!isCashOutAction) {
+                const coinConfig = cryptoConfig[activeCoin];
+                if (coinConfig) {
+                  if (betAmount < coinConfig.min) {
+                    setError(language === 'hi' ? `न्यूनतम दांव ${coinConfig.min} ${activeCoin} है।` : language === 'hinglish' ? `Minimum bet limit ${coinConfig.min} ${activeCoin} hai bhae.` : `Minimum bet is ${coinConfig.min} ${activeCoin}.`);
+                    setTimeout(() => setError(null), 3500);
+                    return;
+                  }
+                  if (betAmount > coinConfig.maxBet) {
+                    setError(language === 'hi' ? `अधिकतम दांव ${coinConfig.maxBet} ${activeCoin} है।` : language === 'hinglish' ? `Maximum bet limit ${coinConfig.maxBet} ${activeCoin} hai bhae.` : `Maximum bet is ${coinConfig.maxBet} ${activeCoin}.`);
+                    setTimeout(() => setError(null), 3500);
+                    return;
+                  }
+                }
+              }
+
               if (isPlaying) {
                 if (hasActiveBet) {
                   if (!hasCashedOut) {
