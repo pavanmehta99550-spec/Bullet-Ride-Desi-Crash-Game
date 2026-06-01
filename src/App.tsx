@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldAlert, RefreshCw, Bike, Gauge, User, History, 
   ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2, X,
-  Volume2, VolumeX, Gift, Trophy, Edit3, Check, MessageSquare, Send, Languages, Globe
+  Volume2, VolumeX, Gift, Trophy, Edit3, Check, MessageSquare, Send, Languages, Globe, Trash2
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
@@ -2157,6 +2157,14 @@ export default function App() {
     }
   };
 
+  const deleteChatMessage = async (msgId: string) => {
+    try {
+      await deleteDoc(doc(db, 'direct_chats', msgId));
+    } catch (err) {
+      console.error("Failed to delete chat:", err);
+    }
+  };
+
   const submitComplaint = async () => {
     if (!user) return;
     if (!complaintText.trim()) {
@@ -2567,6 +2575,7 @@ export default function App() {
                                      <div className="flex gap-2 mt-2">
                                        <button onClick={() => translateChatMessage(msg.id, msg.message, 'Hindi')} className="text-[8px] bg-black/20 px-1 rounded">Translate Hindi</button>
                                        <button onClick={() => translateChatMessage(msg.id, msg.message, 'English')} className="text-[8px] bg-black/20 px-1 rounded">Translate English</button>
+                                       <button onClick={() => deleteChatMessage(msg.id)} className="text-[8px] bg-red-950 text-red-400 px-1 rounded border border-red-900 ml-1"><Trash2 className="w-3 h-3" /></button>
                                      </div>
                                      {translatedCache[`${msg.id}_Hindi`] && <div className="text-[9px] mt-1 text-emerald-300">Hindi: {translatedCache[`${msg.id}_Hindi`]}</div>}
                                      {translatedCache[`${msg.id}_English`] && <div className="text-[9px] mt-1 text-sky-300">English: {translatedCache[`${msg.id}_English`]}</div>}
@@ -2580,6 +2589,7 @@ export default function App() {
                                  type="text"
                                  value={adminResponseText}
                                  onChange={(e) => setAdminResponseText(e.target.value)}
+                                  onKeyDown={(e) => e.key === 'Enter' && sendAdminChatMessage()}
                                  className="flex-1 bg-black text-white text-xs border border-zinc-800 rounded p-3 outline-none"
                                  placeholder="Type reply..."
                                />
