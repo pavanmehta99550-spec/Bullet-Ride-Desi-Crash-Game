@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldAlert, RefreshCw, Bike, Gauge, User, History, 
   ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2, X,
-  Volume2, VolumeX, Gift, Trophy
+  Volume2, VolumeX, Gift, Trophy, Edit3, Check, MessageSquare, Send, Languages, Globe
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
@@ -22,7 +22,7 @@ import { SearchableCoinDropdown } from './components/SearchableCoinDropdown';
 import { cryptoConfig } from './lib/cryptoConfig';
 import { formatBetAmount, calculateFiatValue } from './lib/conversion';
 import { audioManager } from './lib/audio';
-import { translations } from './lib/translations';
+import { translations, getTranslatedCrashReason } from './lib/translations';
 import { initial100Riders, allCountriesWithFlags, allFirstNames, allLastNameSuffixes, CountryRider } from './countries';
 
 interface GameHistory {
@@ -1433,6 +1433,39 @@ export default function App() {
   const [depositAmountInput, setDepositAmountInput] = useState('500');
   const [depositTxId, setDepositTxId] = useState('');
   const [userWithdrawAddress, setUserWithdrawAddress] = useState('');
+
+  // Support / Complaint states
+  const [complaintText, setComplaintText] = useState('');
+  const [complaintCategory, setComplaintCategory] = useState('Deposit');
+  const [myComplaints, setMyComplaints] = useState<any[]>([]);
+  const [isSubmittingComplaint, setIsSubmittingComplaint] = useState(false);
+  const [complaintMsg, setComplaintMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [allComplaints, setAllComplaints] = useState<any[]>([]);
+  const [adminReplyText, setAdminReplyText] = useState<Record<string, string>>({});
+  const [expandedUserComplaintsUid, setExpandedUserComplaintsUid] = useState<string | null>(null);
+
+  // Live Support Direct Chat States
+  const [supportTab, setSupportTab] = useState<'tickets' | 'chat'>('tickets');
+  const [myChatMessages, setMyChatMessages] = useState<any[]>([]);
+  const [myChatText, setMyChatText] = useState('');
+  const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
+  const [allChatMessagesInAdmin, setAllChatMessagesInAdmin] = useState<any[]>([]);
+  const [selectedAdminChatUserId, setSelectedAdminChatUserId] = useState<string | null>(null);
+  const [adminResponseText, setAdminResponseText] = useState('');
+  const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
+  const [translatedCache, setTranslatedCache] = useState<Record<string, string>>({});
+
+  // Profile display name edit states
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [profileNameError, setProfileNameError] = useState('');
+
+  useEffect(() => {
+    if (user && user.displayName) {
+      setEditedName(user.displayName);
+    }
+  }, [user]);
   const [withdrawStep, setWithdrawStep] = useState<'coin' | 'amount'>(() => {
     try {
       const savedSymbol = localStorage.getItem('selected_crypto_coin_symbol');
@@ -1465,7 +1498,7 @@ export default function App() {
       setError("Valid amount dalo bhai!");
       return;
     }
-
+    
     // Client-side guard for successful deposit
     if (!hasDeposited) {
       setError("Withdrawal locked hai bhai! Pehle kam se kam ek successful deposit approved hona chahiye. 🔒 (Complete 1 deposit to unlock!)");
@@ -1473,12 +1506,20 @@ export default function App() {
       return;
     }
 
+    // Convert INR withdrawal amount to selected crypto coin amount based on rates
+    const rate = rates[selectedCoin.symbol] || 1; 
+    const coinAmount = amount / rate; // Example: ₹500 amount / ₹100 rate = 5 coins
+
     const coinBalance = coinBalances[selectedCoin.symbol] || 0;
-    if (amount > coinBalance) {
-      setError(`Aapke paas is coin (${selectedCoin.symbol}) me sirf ${coinBalance} balance ya fuel nahi hai!`);
+    
+    // Check main balance for crypto amount
+    if (coinAmount > coinBalance) {
+      setError(`Aapke paas ${selectedCoin.symbol} bal insufficient hai! Req: ${coinAmount.toFixed(4)}, Bal: ${coinBalance.toFixed(4)}.`);
       setTimeout(() => setError(null), 4000);
       return;
     }
+    
+    // Check against withdrawable (winnings) INR balance
     if (amount > withdrawableBalance) {
       setError("Sirf 'Winnings' balance hi withdraw hota hai!");
       setTimeout(() => setError(null), 3000);
@@ -1489,11 +1530,11 @@ export default function App() {
       const res = await fetch('/api/withdraw/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, coin: selectedCoin, userAddress: userWithdrawAddress, userId: user.uid })
+        body: JSON.stringify({ amount: coinAmount, coin: selectedCoin, userAddress: userWithdrawAddress, userId: user.uid, originalAmountINR: amount })
       });
       const data = await res.json();
       if (res.ok) {
-        updateUserBalance(user.uid, coinBalance - amount, selectedCoin.symbol);
+        updateUserBalance(user.uid, coinBalance - coinAmount, selectedCoin.symbol);
         setWithdrawableBalance(prev => Math.max(0, prev - amount));
         setIsWithdrawModalOpen(false);
         setWithdrawStep('amount');
@@ -1964,6 +2005,254 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // --- Live Support & Complaint Listeners ---
+  useEffect(() => {
+    if (!user || !db) return;
+    const q = query(
+      collection(db, 'complaints'),
+      where('userId', '==', user.uid)
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setMyComplaints(list);
+    }, (err) => {
+      console.warn("Error listening to user complaints:", err);
+    });
+    return () => unsub();
+  }, [user]);
+
+  useEffect(() => {
+    if (!isAdminAuthenticated || !showAdmin || !db) return;
+    const q = collection(db, 'complaints');
+    const unsub = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setAllComplaints(list);
+    }, (err) => {
+      console.warn("Error listening to admin complaints:", err);
+    });
+    return () => unsub();
+  }, [isAdminAuthenticated, showAdmin]);
+
+  // Live direct chat listeners (Real-time Sync)
+  useEffect(() => {
+    if (!user || !db) return;
+    const q = query(
+      collection(db, 'direct_chats'),
+      where('userId', '==', user.uid)
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      setMyChatMessages(list);
+    }, (err) => {
+      console.warn("Error listening to user live chat:", err);
+    });
+    return () => unsub();
+  }, [user]);
+
+  useEffect(() => {
+    if (!isAdminAuthenticated || !showAdmin || !db) return;
+    const q = collection(db, 'direct_chats');
+    const unsub = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      setAllChatMessagesInAdmin(list);
+    }, (err) => {
+      console.warn("Error listening to admin live chats:", err);
+    });
+    return () => unsub();
+  }, [isAdminAuthenticated, showAdmin]);
+
+  // Direct Live Chat send helpers
+  const sendUserChatMessage = async () => {
+    if (!user || !db || !myChatText.trim()) return;
+    setIsSendingChatMessage(true);
+    try {
+      const curCoin = activeCoinRef.current || 'INR';
+      const coinConfig = allCountriesWithFlags.find(c => c.coin === curCoin) || { flag: "🇮🇳", country: "India" };
+
+      const messageId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      await setDoc(doc(db, 'direct_chats', messageId), {
+        userId: user.uid,
+        userDisplayName: user?.displayName || 'Anonymous Rider',
+        userEmail: user?.email || 'guest@desi-rider.com',
+        sender: 'user',
+        message: myChatText.trim(),
+        country: coinConfig.country,
+        flag: coinConfig.flag,
+        createdAt: Date.now()
+      });
+      setMyChatText('');
+    } catch (err) {
+      console.error("Failed to send chat message:", err);
+    } finally {
+      setIsSendingChatMessage(false);
+    }
+  };
+
+  const sendAdminChatMessage = async () => {
+    if (!db || !selectedAdminChatUserId || !adminResponseText.trim()) return;
+    try {
+      const userMsgs = allChatMessagesInAdmin.filter(m => m.userId === selectedAdminChatUserId);
+      const sample = userMsgs[0] || {};
+
+      const messageId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      await setDoc(doc(db, 'direct_chats', messageId), {
+        userId: selectedAdminChatUserId,
+        userDisplayName: sample.userDisplayName || 'Rider',
+        userEmail: sample.userEmail || '',
+        sender: 'admin',
+        message: adminResponseText.trim(),
+        country: sample.country || 'Global',
+        flag: sample.flag || '🪙',
+        createdAt: Date.now()
+      });
+      setAdminResponseText('');
+    } catch (err) {
+      console.error("Failed to send admin chat reply:", err);
+    }
+  };
+
+  const translateChatMessage = async (messageId: string, text: string, targetLanguage: 'Hindi' | 'English') => {
+    if (translatingMessageId) return;
+    setTranslatingMessageId(messageId);
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ text, targetLanguage })
+      });
+      
+      if (!response.ok) {
+        throw new Error('API request failed');
+      }
+      
+      const data = await response.json();
+      if (data.translatedText) {
+        setTranslatedCache(prev => ({
+          ...prev,
+          [`${messageId}_${targetLanguage}`]: data.translatedText
+        }));
+      }
+    } catch (err) {
+      console.error("Translation processing failed:", err);
+    } finally {
+      setTranslatingMessageId(null);
+    }
+  };
+
+  const submitComplaint = async () => {
+    if (!user) return;
+    if (!complaintText.trim()) {
+      setComplaintMsg({ text: 'Please details enter karein.', type: 'error' });
+      return;
+    }
+    setIsSubmittingComplaint(true);
+    setComplaintMsg(null);
+    try {
+      const newDocId = `comp_${Date.now()}`;
+      await setDoc(doc(db, 'complaints', newDocId), {
+        userId: user.uid,
+        userEmail: user.email || 'guest@desi-rider.com',
+        userDisplayName: user.displayName || 'Anonymous Rider',
+        category: complaintCategory,
+        message: complaintText.trim(),
+        status: 'pending',
+        adminReply: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      });
+      setComplaintText('');
+      setComplaintMsg({ text: 'Shikayat successfully bej di gayi hai! 📩', type: 'success' });
+      setTimeout(() => setComplaintMsg(null), 5000);
+    } catch (err: any) {
+      console.error("Failed to submit complaint:", err);
+      setComplaintMsg({ text: 'Kuch error aya, re-try karein!', type: 'error' });
+    } finally {
+      setIsSubmittingComplaint(false);
+    }
+  };
+
+  const submitAdminReply = async (complaintId: string, replyValue: string, resolveStatus: boolean = false) => {
+    if (!db) return;
+    try {
+      showAdminStatus("Submitting reply... ⏳", 'success', 1500);
+      const complaintRef = doc(db, 'complaints', complaintId);
+      const updateData: any = {
+        adminReply: replyValue.trim(),
+        updatedAt: Date.now()
+      };
+      if (resolveStatus) {
+        updateData.status = 'resolved';
+      }
+      await setDoc(complaintRef, updateData, { merge: true });
+      showAdminStatus("Complaint reply saved successfully! ✅", 'success', 4000);
+      setAdminReplyText(prev => ({ ...prev, [complaintId]: '' }));
+    } catch (err: any) {
+      console.error("Failed to update complaint:", err);
+      showAdminStatus("Replied failed: " + err.message, 'error');
+    }
+  };
+
+  const handleUpdateDisplayName = async () => {
+    if (!user || !editedName.trim()) return;
+    const newName = editedName.trim();
+    if (newName === user.displayName) {
+      setIsEditingName(false);
+      return;
+    }
+    
+    setIsSavingName(true);
+    setProfileNameError('');
+    try {
+      // 1. Update Firebase Auth Profile
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        await updateProfile(currentUser, { displayName: newName });
+      }
+      
+      // 2. Update Firestore user document
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, { displayName: newName }, { merge: true });
+      
+      // 3. Update cached profile in LocalStorage
+      const localKey = `cached_profile_v1_${user.uid}`;
+      const cached = localStorage.getItem(localKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          parsed.displayName = newName;
+          localStorage.setItem(localKey, JSON.stringify(parsed));
+        } catch (_) {}
+      }
+      
+      // 4. Update local state
+      setUser((prev: any) => ({ ...prev, displayName: newName }));
+      setIsEditingName(false);
+    } catch (err: any) {
+      console.error("Failed to update display name:", err);
+      setProfileNameError(err.message || 'Apna naam update karne me dikkat hui.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   const approveWithdrawal = async (requestId: number) => {
     try {
       const res = await fetch('/api/admin/withdraw/approve', {
@@ -2229,7 +2518,89 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Promo Codes Management */}
+                   {/* Live Direct Chat Section */}
+                   <div className="mt-8 pt-6 border-t border-zinc-800 pb-6">
+                     <h4 className="text-[#FFD700] font-bold text-sm uppercase tracking-widest flex items-center gap-2 mb-4">
+                       <MessageSquare className="w-4 h-4" />
+                       <span>Live Direct Chat (यूज़र के साथ सीधा चैट)</span>
+                     </h4>
+                     
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Users List */}
+                       <div className="md:col-span-1 bg-black/40 border border-zinc-800 rounded-xl p-3 max-h-[400px] overflow-y-auto custom-scrollbar">
+                         <p className="text-[10px] font-bold text-zinc-500 uppercase mb-2">Active Chats ({Array.from(new Set(allChatMessagesInAdmin.map(m => m.userId))).length})</p>
+                         <div className="space-y-1">
+                           {Array.from(new Set(allChatMessagesInAdmin.map(m => m.userId))).map((uid) => {
+                             const userMsgs = allChatMessagesInAdmin.filter(m => m.userId === uid);
+                             const lastMsg = userMsgs[userMsgs.length - 1];
+                             return (
+                               <button
+                                 key={uid}
+                                 onClick={() => setSelectedAdminChatUserId(uid)}
+                                 className={`w-full text-left p-3 rounded-lg text-xs transition-all ${
+                                   selectedAdminChatUserId === uid 
+                                     ? 'bg-red-900/40 border border-red-600/50' 
+                                     : 'bg-zinc-900 border border-zinc-800 hover:border-zinc-700'
+                                 }`}
+                               >
+                                 <div className="font-bold text-zinc-200">{lastMsg.userDisplayName}</div>
+                                 <div className="text-[9px] text-zinc-500 truncate">{lastMsg.message}</div>
+                               </button>
+                             );
+                           })}
+                         </div>
+                       </div>
+
+                       {/* Chat View */}
+                       <div className="md:col-span-2 bg-black/40 border border-zinc-800 rounded-xl p-4 flex flex-col h-[400px]">
+                         {selectedAdminChatUserId ? (
+                           <>
+                             <div className="text-[10px] text-zinc-400 uppercase font-bold border-b border-zinc-800 pb-2 mb-2">
+                               Chat with {allChatMessagesInAdmin.find(m => m.userId === selectedAdminChatUserId)?.userDisplayName || 'User'}
+                             </div>
+                             
+                             <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar mb-4">
+                               {allChatMessagesInAdmin.filter(m => m.userId === selectedAdminChatUserId).map(msg => (
+                                 <div key={msg.id} className={`flex flex-col ${msg.sender === 'admin' ? 'items-end' : 'items-start'}`}>
+                                   <div className={`p-3 rounded-lg text-xs max-w-[80%] ${msg.sender === 'admin' ? 'bg-red-700 text-white' : 'bg-zinc-800 text-zinc-200'}`}>
+                                     {msg.message}
+                                     <div className="flex gap-2 mt-2">
+                                       <button onClick={() => translateChatMessage(msg.id, msg.message, 'Hindi')} className="text-[8px] bg-black/20 px-1 rounded">Translate Hindi</button>
+                                       <button onClick={() => translateChatMessage(msg.id, msg.message, 'English')} className="text-[8px] bg-black/20 px-1 rounded">Translate English</button>
+                                     </div>
+                                     {translatedCache[`${msg.id}_Hindi`] && <div className="text-[9px] mt-1 text-emerald-300">Hindi: {translatedCache[`${msg.id}_Hindi`]}</div>}
+                                     {translatedCache[`${msg.id}_English`] && <div className="text-[9px] mt-1 text-sky-300">English: {translatedCache[`${msg.id}_English`]}</div>}
+                                   </div>
+                                 </div>
+                               ))}
+                             </div>
+                             
+                             <div className="flex gap-2">
+                               <input
+                                 type="text"
+                                 value={adminResponseText}
+                                 onChange={(e) => setAdminResponseText(e.target.value)}
+                                 className="flex-1 bg-black text-white text-xs border border-zinc-800 rounded p-3 outline-none"
+                                 placeholder="Type reply..."
+                               />
+                               <button 
+                                 onClick={sendAdminChatMessage}
+                                 className="bg-red-600 text-white px-4 rounded text-xs uppercase font-bold"
+                               >
+                                 Send
+                               </button>
+                             </div>
+                           </>
+                         ) : (
+                           <div className="flex-1 flex items-center justify-center text-zinc-600 text-xs italic">
+                             Select a user to start chatting
+                           </div>
+                         )}
+                       </div>
+                     </div>
+                   </div>
+                   
+                   {/* Promo Codes Management */}
                   <div className="mt-8 pt-6 border-t border-zinc-800 grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
@@ -2502,6 +2873,65 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Global Support Tickets Feed */}
+                  {allComplaints.length > 0 && (
+                    <div className="bg-zinc-950/80 border-2 border-red-500/20 p-5 rounded-2xl space-y-4">
+                      <div className="flex justify-between items-center pb-2 border-b border-zinc-900">
+                        <h4 className="text-xs font-black uppercase italic text-[#FFD700] tracking-widest flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
+                          <span>Rider Helpdesk & Complaint Box ({allComplaints.filter(c => c.status !== 'resolved').length} Pending ⏳)</span>
+                        </h4>
+                        <span className="text-[8px] bg-red-950 text-red-400 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider border border-red-900/30">
+                          Live Support Feed
+                        </span>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+                        {allComplaints.map((comp) => {
+                          const isExpanded = expandedUserComplaintsUid === comp.userId;
+                          return (
+                            <div key={comp.id} className="bg-black/50 border border-zinc-850 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-zinc-850 transition-colors">
+                              <div className="space-y-1.5 flex-1 select-all text-xs">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-white font-bold">{comp.userDisplayName || 'Anonymous Rider'}</span>
+                                  <span className="text-[8px] px-2 py-0.5 bg-red-950/40 text-red-450 border border-red-900/10 rounded font-mono uppercase">
+                                    • {comp.category}
+                                  </span>
+                                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                    comp.status === 'resolved' 
+                                      ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-900/30' 
+                                      : 'bg-yellow-950/30 text-yellow-500 border border-yellow-900/20'
+                                  }`}>
+                                    {comp.status === 'resolved' ? 'RESOLVED ✅' : 'PENDING ⏳'}
+                                  </span>
+                                </div>
+                                <p className="text-zinc-300 font-sans leading-relaxed break-all">{comp.message}</p>
+                                {comp.adminReply && (
+                                  <p className="text-[10px] text-zinc-550 italic font-sans">
+                                    Last Admin Response: <span className="text-zinc-400 font-normal">{comp.adminReply}</span>
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <button
+                                  onClick={() => {
+                                    setExpandedUserComplaintsUid(isExpanded ? null : comp.userId);
+                                    if (!isExpanded) {
+                                      // Optional: scroll automatically to the users section
+                                      document.getElementById('registered-users-fuel-mgt')?.scrollIntoView({ behavior: 'smooth' });
+                                    }
+                                  }}
+                                  className="bg-zinc-800 hover:bg-[#FFD700] hover:text-black hover:scale-[1.02] active:scale-[0.98] text-white font-bold text-[9px] uppercase tracking-wider px-3.5 py-2 rounded-lg border border-zinc-700 hover:border-transparent transition-all shrink-0"
+                                >
+                                  {isExpanded ? "Hide Rider Details 📂" : "Go to Rider & Reply 🎫"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Crypto Address Management */}
                   <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-4">
@@ -2651,7 +3081,7 @@ export default function App() {
                   </div>
 
                   {/* Registered Users & Manually Add Fuel Balance Management */}
-                  <div className="mt-8 pt-6 border-t border-zinc-800 space-y-4">
+                  <div id="registered-users-fuel-mgt" className="mt-8 pt-6 border-t border-zinc-800 space-y-4">
                     <h4 className="text-[#FFD700] font-bold text-xs uppercase tracking-widest">Registered User Fuel Balance Management</h4>
                     <div className="bg-black/40 border border-zinc-800 rounded overflow-hidden">
                       <div className="max-h-80 overflow-y-auto w-full">
@@ -2666,109 +3096,239 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-900">
-                            {adminUsers.map((u) => (
-                              <tr key={u.uid} className="hover:bg-white/5 transition-colors">
-                                <td className="p-3">
-                                  <p className="text-white font-bold">{u.displayName || 'Anonymous Rider'}</p>
-                                  <p className="text-zinc-500 font-mono text-[10px]">{u.email || 'No email linked'}</p>
-                                </td>
-                                <td className="p-3 font-mono text-zinc-500 text-[10px] select-all">
-                                  {u.uid}
-                                </td>
-                                <td className="p-3">
-                                  <div className="flex flex-col items-start gap-1">
-                                    <span className="text-[#FFD700] font-mono font-bold text-sm">
-                                      {u.activeCoin || 'INR'}: {(!u.activeCoin || u.activeCoin === 'INR') ? '₹' : ''}
-                                      {(u.walletBalance || 0).toLocaleString(undefined, { minimumFractionDigits: (!u.activeCoin || u.activeCoin === 'INR') ? 2 : 4 })}
-                                    </span>
-                                    {u.coinBalances && (
-                                      <div className="flex flex-col gap-0.5 mt-1">
-                                        {Object.entries(u.coinBalances)
-                                          .filter(([cSym, cVal]) => cSym !== (u.activeCoin || 'INR') && (cVal as number) > 0)
-                                          .map(([cSym, cVal]) => (
-                                            <span key={cSym} className="text-[9px] text-zinc-400 font-mono">
-                                              • {cSym}: {cVal as number}
-                                            </span>
-                                          ))
-                                        }
+                            {adminUsers.map((u) => {
+                              const userComplaints = allComplaints.filter(c => c.userId === u.uid);
+                              const hasPending = userComplaints.some(c => c.status !== 'resolved');
+                              const isExpanded = expandedUserComplaintsUid === u.uid;
+
+                              return (
+                                <Fragment key={u.uid}>
+                                  <tr className={`hover:bg-white/5 transition-colors ${isExpanded ? 'bg-zinc-900/60' : ''}`}>
+                                    <td className="p-3">
+                                      <div className="flex flex-col gap-1">
+                                        <p className="text-white font-bold flex items-center gap-1.5 flex-wrap">
+                                          <span>{u.displayName || 'Anonymous Rider'}</span>
+                                          {userComplaints.length > 0 && (
+                                            <button 
+                                              onClick={() => setExpandedUserComplaintsUid(isExpanded ? null : u.uid)}
+                                              className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full cursor-pointer transition-all hover:scale-105 select-none shrink-0 flex items-center gap-1.5 border ${
+                                                hasPending 
+                                                  ? 'bg-red-950 text-red-400 border-red-800/80 animate-pulse' 
+                                                  : 'bg-zinc-850 text-zinc-400 border-zinc-750'
+                                              }`}
+                                            >
+                                              <span>🎫 {userComplaints.length} Ticket{userComplaints.length > 1 ? 's' : ''}</span>
+                                              {hasPending && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>}
+                                            </button>
+                                          )}
+                                        </p>
+                                        <p className="text-zinc-500 font-mono text-[10px]">{u.email || 'No email linked'}</p>
                                       </div>
-                                    )}
-                                    <button
-                                      onClick={() => handleResetUserBalance(u.uid)}
-                                      className="text-red-500 hover:text-red-400 font-bold hover:underline text-[9px] uppercase italic cursor-pointer bg-red-500/10 hover:bg-red-500/20 px-1.5 py-0.5 rounded border border-red-900/30 transition-all active:scale-95 mt-1"
-                                    >
-                                      Reset ALL to 0 🛠️
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="p-3">
-                                  <div className="flex flex-col items-start gap-2">
-                                    {u.isBlocked ? (
-                                      <span className="px-2 py-0.5 rounded bg-red-950 border border-red-800 text-red-500 text-[8px] font-black uppercase tracking-wider">
-                                        Blocked 🚫
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-0.5 rounded bg-green-950 border border-green-900 text-green-400 text-[8px] font-black uppercase tracking-wider">
-                                        Active ✅
-                                      </span>
-                                    )}
-                                    <button 
-                                      onClick={() => handleToggleBlockUser(u.uid, !!u.isBlocked)}
-                                      className={`px-2 py-1 rounded text-[9px] font-black uppercase transition-all active:scale-95 ${
-                                        u.isBlocked 
-                                          ? "bg-green-700 hover:bg-green-600 text-white" 
-                                          : "bg-red-950/40 border border-red-800 hover:bg-red-900/60 text-red-400"
-                                      }`}
-                                    >
-                                      {u.isBlocked ? "Unblock Rider" : "Block Rider"}
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="p-3 text-right">
-                                  <div className="inline-flex gap-2 items-center">
-                                    <select
-                                      value={userCoinSelections[u.uid] || 'INR'}
-                                      onChange={(e) => setUserCoinSelections(prev => ({
-                                        ...prev,
-                                        [u.uid]: e.target.value
-                                      }))}
-                                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 px-2 py-1.5 text-xs rounded outline-none focus:border-[#FFD700] hover:border-zinc-700 cursor-pointer font-bold font-mono"
-                                    >
-                                      <option value="INR" style={{ color: '#FFD700' }}>INR (Direct)</option>
-                                      {coins.map((coin) => (
-                                        <option key={coin.symbol} value={coin.symbol} style={{ color: coin.color }}>
-                                          {coin.symbol}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <input 
-                                      type="number"
-                                      placeholder="Amount"
-                                      value={userBalanceInputs[u.uid] || ''}
-                                      onChange={(e) => setUserBalanceInputs(prev => ({
-                                        ...prev,
-                                        [u.uid]: e.target.value
-                                      }))}
-                                      className="w-16 bg-zinc-950 border border-zinc-850 px-2 py-1.5 text-xs text-white rounded outline-none focus:border-[#FFD700] font-mono text-center"
-                                    />
-                                    <div className="flex flex-col gap-2">
-                                      <button
-                                        onClick={() => handleAddUserBalance(u.uid)}
-                                        className="bg-[#FFD700] text-black px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-white transition-all whitespace-nowrap active:scale-95"
-                                      >
-                                        ADD FUEL
-                                      </button>
-                                      <button
-                                        onClick={() => handleSetUserBalance(u.uid)}
-                                        className="bg-red-950 text-red-200 border border-red-800 px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-red-900 transition-all whitespace-nowrap active:scale-95"
-                                      >
-                                        SET FUEL
-                                      </button>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                                    </td>
+                                    <td className="p-3 font-mono text-zinc-500 text-[10px] select-all">
+                                      {u.uid}
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex flex-col items-start gap-1">
+                                        <span className="text-[#FFD700] font-mono font-bold text-sm">
+                                          {u.activeCoin || 'INR'}: {(!u.activeCoin || u.activeCoin === 'INR') ? '₹' : ''}
+                                          {(u.walletBalance || 0).toLocaleString(undefined, { minimumFractionDigits: (!u.activeCoin || u.activeCoin === 'INR') ? 2 : 4 })}
+                                        </span>
+                                        {u.coinBalances && (
+                                          <div className="flex flex-col gap-0.5 mt-1">
+                                            {Object.entries(u.coinBalances)
+                                              .filter(([cSym, cVal]) => cSym !== (u.activeCoin || 'INR') && (cVal as number) > 0)
+                                              .map(([cSym, cVal]) => (
+                                                <span key={cSym} className="text-[9px] text-zinc-400 font-mono">
+                                                  • {cSym}: {cVal as number}
+                                                </span>
+                                              ))
+                                            }
+                                          </div>
+                                        )}
+                                        <button
+                                          onClick={() => handleResetUserBalance(u.uid)}
+                                          className="text-red-500 hover:text-red-400 font-bold hover:underline text-[9px] uppercase italic cursor-pointer bg-red-500/10 hover:bg-red-500/20 px-1.5 py-0.5 rounded border border-red-900/30 transition-all active:scale-95 mt-1"
+                                        >
+                                          Reset ALL to 0 🛠️
+                                        </button>
+                                      </div>
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex flex-col items-start gap-2">
+                                        {u.isBlocked ? (
+                                          <span className="px-2 py-0.5 rounded bg-red-950 border border-red-800 text-red-500 text-[8px] font-black uppercase tracking-wider">
+                                            Blocked 🚫
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded bg-green-950 border border-green-900 text-green-400 text-[8px] font-black uppercase tracking-wider">
+                                            Active ✅
+                                          </span>
+                                        )}
+                                        <button 
+                                          onClick={() => handleToggleBlockUser(u.uid, !!u.isBlocked)}
+                                          className={`px-2 py-1 rounded text-[9px] font-black uppercase transition-all active:scale-95 ${
+                                            u.isBlocked 
+                                              ? "bg-green-700 hover:bg-green-600 text-white" 
+                                              : "bg-red-950/40 border border-red-800 hover:bg-red-900/60 text-red-400"
+                                          }`}
+                                        >
+                                          {u.isBlocked ? "Unblock Rider" : "Block Rider"}
+                                        </button>
+                                      </div>
+                                    </td>
+                                    <td className="p-3 text-right">
+                                      <div className="inline-flex gap-2 items-center">
+                                        <select
+                                          value={userCoinSelections[u.uid] || 'INR'}
+                                          onChange={(e) => setUserCoinSelections(prev => ({
+                                            ...prev,
+                                            [u.uid]: e.target.value
+                                          }))}
+                                          className="bg-zinc-950 border border-zinc-800 text-zinc-300 px-2 py-1.5 text-xs rounded outline-none focus:border-[#FFD700] hover:border-zinc-700 cursor-pointer font-bold font-mono"
+                                        >
+                                          <option value="INR" style={{ color: '#FFD700' }}>INR (Direct)</option>
+                                          {coins.map((coin) => (
+                                            <option key={coin.symbol} value={coin.symbol} style={{ color: coin.color }}>
+                                              {coin.symbol}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <input 
+                                          type="number"
+                                          placeholder="Amount"
+                                          value={userBalanceInputs[u.uid] || ''}
+                                          onChange={(e) => setUserBalanceInputs(prev => ({
+                                            ...prev,
+                                            [u.uid]: e.target.value
+                                          }))}
+                                          className="w-16 bg-zinc-950 border border-zinc-850 px-2 py-1.5 text-xs text-white rounded outline-none focus:border-[#FFD700] font-mono text-center"
+                                        />
+                                        <div className="flex flex-col gap-2">
+                                          <button
+                                            onClick={() => handleAddUserBalance(u.uid)}
+                                            className="bg-[#FFD700] text-black px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-white transition-all whitespace-nowrap active:scale-95"
+                                          >
+                                            ADD FUEL
+                                          </button>
+                                          <button
+                                            onClick={() => handleSetUserBalance(u.uid)}
+                                            className="bg-red-950 text-red-200 border border-red-800 px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-red-900 transition-all whitespace-nowrap active:scale-95"
+                                          >
+                                            SET FUEL
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+
+                                  {isExpanded && (
+                                    <tr className="bg-zinc-950 border-y border-zinc-850">
+                                      <td colSpan={5} className="p-4 sm:p-5">
+                                        <div className="bg-[#121212] border-2 border-red-500/20 rounded-2xl p-5 space-y-4 shadow-3xl">
+                                          <div className="flex justify-between items-center pb-2 border-b border-zinc-850">
+                                            <div className="flex items-center gap-2">
+                                              <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
+                                              <h5 className="text-[11px] font-black uppercase text-[#FFD700] tracking-widest font-sans">
+                                                Active Support Tickets of {u.displayName || 'Rider'} ({userComplaints.length})
+                                              </h5>
+                                            </div>
+                                            <button 
+                                              onClick={() => setExpandedUserComplaintsUid(null)}
+                                              className="text-zinc-550 hover:text-white uppercase font-black text-[9px] tracking-wider"
+                                            >
+                                              Close DETAILS [X]
+                                            </button>
+                                          </div>
+
+                                          <div className="space-y-4">
+                                            {userComplaints.map((comp) => {
+                                              const replyValue = adminReplyText[comp.id] || '';
+                                              return (
+                                                <div key={comp.id} className="bg-black/60 border border-zinc-850 p-4 rounded-xl space-y-3">
+                                                  <div className="flex justify-between items-center text-[10px]">
+                                                    <div className="flex items-center gap-1.5">
+                                                      <span className="text-zinc-400 font-mono font-bold text-[8px] px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded">
+                                                        Category: {comp.category}
+                                                      </span>
+                                                      <span className="text-zinc-500 font-mono text-[8px]">ID: {comp.id}</span>
+                                                    </div>
+                                                    <span className={`text-[8px] font-black uppercase px-2.5 py-0.5 rounded border ${
+                                                      comp.status === 'resolved' 
+                                                        ? 'bg-emerald-950 text-emerald-400 border-emerald-900/40' 
+                                                        : 'bg-red-950/40 text-red-400 border-red-900/30 font-bold'
+                                                    }`}>
+                                                      {comp.status === 'resolved' ? 'RESOLVED ✅' : 'PENDING ⏳'}
+                                                    </span>
+                                                  </div>
+
+                                                  <div className="bg-black border border-zinc-900 p-3 rounded-lg">
+                                                    <p className="text-[9px] text-[#FFD700]/70 font-bold uppercase tracking-wider mb-1">Complaint Description:</p>
+                                                    <p className="text-white text-xs select-all whitespace-pre-wrap break-all leading-relaxed font-sans">{comp.message}</p>
+                                                  </div>
+
+                                                  {comp.adminReply && (
+                                                    <div className="bg-emerald-950/5 border-l-2 border-emerald-500 p-3 rounded-r-xl space-y-0.5">
+                                                      <p className="text-[9px] font-black uppercase italic text-emerald-400">Current Saved Reply:</p>
+                                                      <p className="text-zinc-300 select-all leading-normal break-all font-sans">{comp.adminReply}</p>
+                                                    </div>
+                                                  )}
+
+                                                  <div className="space-y-2 pt-2 border-t border-zinc-900/80">
+                                                    <label className="text-[9px] text-[#FFD700] uppercase font-black tracking-wider block">
+                                                      Type New Reply or Change Reply (उत्तर / समाधान लिखें):
+                                                    </label>
+                                                    <textarea 
+                                                      rows={2}
+                                                      placeholder="Yahan reply enter karein..."
+                                                      value={replyValue}
+                                                      onChange={(e) => setAdminReplyText(prev => ({ ...prev, [comp.id]: e.target.value }))}
+                                                      className="w-full bg-black text-white text-xs border border-zinc-850 rounded-lg p-2.5 outline-none focus:border-[#FFD700] placeholder-zinc-700 resize-none transition-all font-sans"
+                                                    />
+
+                                                    <div className="flex gap-2 flex-wrap">
+                                                      <button
+                                                        onClick={() => submitAdminReply(comp.id, replyValue, false)}
+                                                        disabled={!replyValue.trim()}
+                                                        className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold uppercase text-[9px] rounded-lg border border-zinc-700 disabled:opacity-30 duration-150 transition-all"
+                                                      >
+                                                        Save Reply Only ✉️
+                                                      </button>
+                                                      <button
+                                                        onClick={() => submitAdminReply(comp.id, replyValue, true)}
+                                                        disabled={!replyValue.trim()}
+                                                        className="px-3.5 py-2 bg-[#FFD700] hover:bg-white text-black font-black uppercase text-[9px] rounded-lg disabled:opacity-40 duration-150 transition-all flex items-center gap-1 shadow-md"
+                                                      >
+                                                        <span>Save Reply & Mark Resolved ✅</span>
+                                                      </button>
+                                                      {comp.status !== 'resolved' && (
+                                                        <button
+                                                          onClick={() => submitAdminReply(comp.id, comp.adminReply || 'Resolved by Admin.', true)}
+                                                          className="px-3.5 py-2 bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-950/30 font-bold uppercase text-[9px] rounded-lg duration-150 transition-all"
+                                                        >
+                                                          Direct Resolve ✅
+                                                        </button>
+                                                      )}
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="text-[8px] text-zinc-650 text-right font-mono">
+                                                    Submitted: {new Date(comp.createdAt).toLocaleString('en-IN', { timeZone: 'IST' })}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                            {userComplaints.length === 0 && (
+                                              <p className="text-zinc-500 text-xs italic text-center py-2">No complaints submitted by this user.</p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              );
+                            })}
                             {adminUsers.length === 0 && (
                               <tr>
                                 <td colSpan={5} className="p-8 text-center text-zinc-600 italic text-xs">
@@ -3124,7 +3684,66 @@ export default function App() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-xl font-black italic uppercase text-white tracking-tighter truncate">{user.displayName}</h3>
+                    {isEditingName ? (
+                      <div className="flex flex-col gap-1.5 w-full">
+                        <div className="flex items-center gap-1.5">
+                          <input 
+                            type="text" 
+                            className="bg-black border-2 border-red-500/80 text-white font-black uppercase text-xs rounded-xl px-3 py-1.5 outline-none focus:border-[#FFD700] w-full"
+                            value={editedName}
+                            onChange={(e) => setEditedName(e.target.value)}
+                            maxLength={25}
+                            disabled={isSavingName}
+                            placeholder="Enter Name..."
+                            autoFocus
+                          />
+                          <button 
+                            onClick={handleUpdateDisplayName}
+                            disabled={isSavingName || !editedName.trim()}
+                            className="p-2 bg-[#FFD700] hover:bg-white text-black rounded-xl disabled:opacity-40 shrink-0 transition-all cursor-pointer flex items-center justify-center"
+                            title="Save Name"
+                          >
+                            {isSavingName ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setEditedName(user.displayName);
+                              setIsEditingName(false);
+                              setProfileNameError('');
+                            }}
+                            disabled={isSavingName}
+                            className="p-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl shrink-0 transition-all cursor-pointer flex items-center justify-center"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        {profileNameError && (
+                          <p className="text-[9px] text-red-500 font-semibold uppercase tracking-wider">{profileNameError}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 max-w-full">
+                        <h3 className="text-xl font-black italic uppercase text-white tracking-tighter truncate flex-1 min-w-0">
+                          {user.displayName}
+                        </h3>
+                        <button 
+                          onClick={() => {
+                            setEditedName(user.displayName || '');
+                            setProfileNameError('');
+                            setIsEditingName(true);
+                          }}
+                          className="p-1.5 text-zinc-500 hover:text-[#FFD700] hover:bg-zinc-850/50 rounded-lg transition-all shrink-0 cursor-pointer flex items-center justify-center"
+                          title="Edit Name"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                     <p className="text-zinc-500 text-[10px] uppercase font-bold tracking-widest truncate">{user.email}</p>
                   </div>
                 </div>
@@ -3313,6 +3932,223 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* 🎫 Live Support & Complaint Center / शिकायत केंद्र */}
+                <div className="bg-zinc-950/90 border border-red-500/20 p-5 rounded-2xl space-y-4 shadow-xl relative overflow-hidden">
+                  <div className="absolute -top-10 -right-10 w-24 h-24 bg-red-500/10 rounded-full blur-2xl"></div>
+                  <div className="flex justify-between items-center pb-2 border-b border-zinc-905">
+                    <h4 className="text-xs font-black uppercase italic text-[#FFD700] tracking-widest flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
+                      <span>Shikayat & Live Chat Box (शिकायत केंद्र) 🎫</span>
+                    </h4>
+                    <span className="text-[8px] bg-red-950 text-red-400 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider border border-red-900/30">
+                      Rider Helpdesk
+                    </span>
+                  </div>
+
+                  {/* Tabs Selector */}
+                  <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-xl border border-zinc-850">
+                    <button
+                      onClick={() => setSupportTab('tickets')}
+                      className={`py-2 px-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                        supportTab === 'tickets'
+                          ? 'bg-red-650 text-white shadow-lg shadow-red-950/20'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                      }`}
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      <span>Shikayat / Tickets</span>
+                    </button>
+                    <button
+                      onClick={() => setSupportTab('chat')}
+                      className={`py-2 px-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                        supportTab === 'chat'
+                          ? 'bg-red-650 text-white shadow-lg shadow-red-950/20'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                      }`}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Direct Chat / चैट 💬</span>
+                    </button>
+                  </div>
+
+                  {supportTab === 'tickets' ? (
+                    <div className="space-y-4">
+                      <p className="text-[11px] text-zinc-400 leading-normal bg-red-550/5 border border-red-500/10 p-3 rounded-xl">
+                        ℹ️ <strong>Bhaiya, koi pareshani hai?</strong> Deposit fansa ho, withdrawal pending ho ya baki koi game related dikkat ho, toh apni shikayat niche enter karein. Hamare admin turant review karke reply karenge!
+                      </p>
+
+                      <div className="space-y-3">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Shikayat Category (शिकायत श्रेणी)</label>
+                          <select 
+                            value={complaintCategory}
+                            onChange={(e) => setComplaintCategory(e.target.value)}
+                            className="w-full bg-black border-2 border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2.5 outline-none focus:border-[#FFD700] cursor-pointer font-bold transition-all"
+                          >
+                            <option value="Deposit">💵 Deposit Issue (डिपॉजिट समस्या)</option>
+                            <option value="Withdrawal">💸 Withdrawal Issue (निकासी समस्या)</option>
+                            <option value="Game">🎮 Game/Crash Log (खेल/क्रैश समस्या)</option>
+                            <option value="Other">❓ Other Support Query (अन्य सामान्य समस्या)</option>
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[9px] text-zinc-505 uppercase font-bold tracking-wider">Describe your Issue (अपनी शिकायत लिखें)</label>
+                          <textarea 
+                            rows={3}
+                            placeholder="Yahan apni shikayat likhein. Agar deposit ka problem hai, toh TXID ya Details zaroor dalo..."
+                            value={complaintText}
+                            onChange={(e) => setComplaintText(e.target.value)}
+                            className="bg-black text-white text-xs border border-zinc-850 rounded-xl p-3 placeholder-zinc-650 outline-none focus:border-red-500 transition-colors resize-none leading-relaxed"
+                          />
+                        </div>
+
+                        <button
+                          onClick={submitComplaint}
+                          disabled={isSubmittingComplaint || !complaintText.trim()}
+                          className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-black uppercase italic text-xs rounded-xl tracking-widest transition-all flex items-center justify-center gap-1.5 shrink-0 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none duration-150 hover:shadow-[0_0_15px_rgba(220,38,38,0.25)]"
+                        >
+                          {isSubmittingComplaint ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                          ) : "SUBMIT COMPLAINT / शिकायत भेजें 🚀"}
+                        </button>
+
+                        {complaintMsg && (
+                          <motion.p 
+                            initial={{ opacity: 0, y: -5 }} 
+                            animate={{ opacity: 1, y: 0 }} 
+                            className={`text-[10px] font-bold uppercase tracking-wider text-center ${complaintMsg.type === 'error' ? 'text-red-550' : 'text-emerald-400'}`}
+                          >
+                            {complaintMsg.text}
+                          </motion.p>
+                        )}
+                      </div>
+
+                      {/* Previous Tickets / Submitted Complaints List */}
+                      {myComplaints.length > 0 && (
+                        <div className="pt-4 border-t border-zinc-800/80 space-y-3">
+                          <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                            <span>Your Tickets / आपकी शिकायतें ({myComplaints.length})</span>
+                            <span className="text-zinc-655 font-normal">Real-time Sync</span>
+                          </div>
+                          
+                          <div className="max-h-56 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+                            {myComplaints.map((item) => (
+                              <div key={item.id} className="bg-black/45 border border-zinc-850 p-3 rounded-xl space-y-2.5 text-[11px] hover:border-zinc-800 transition-colors">
+                                <div className="flex justify-between items-start gap-2">
+                                  <span className="text-[#FFD700] uppercase font-bold text-[8px] px-2 py-0.5 bg-[#FFD700]/10 rounded border border-[#FFD700]/20 font-mono">
+                                    • {item.category}
+                                  </span>
+                                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                    item.status === 'resolved' 
+                                      ? 'bg-emerald-950/50 text-emerald-400 border-emerald-900/40' 
+                                      : 'bg-yellow-950/20 text-yellow-500 border-yellow-900/30'
+                                  }`}>
+                                    {item.status === 'resolved' ? 'RESOLVED ✅' : 'PENDING ⏳'}
+                                  </span>
+                                </div>
+                                <p className="text-zinc-200 font-sans leading-relaxed break-words">{item.message}</p>
+                                
+                                {item.adminReply ? (
+                                  <div className="bg-emerald-950/15 border-l-2 border-emerald-500 p-2.5 rounded-r-lg space-y-1 mt-1">
+                                    <p className="text-[9px] font-black uppercase italic text-emerald-400">Admin Reply / समाधान:</p>
+                                    <p className="text-zinc-305 font-sans leading-relaxed break-words">{item.adminReply}</p>
+                                  </div>
+                                ) : (
+                                  <p className="text-[8px] text-zinc-550 italic">⏳ Waiting for Admin review...</p>
+                                )}
+
+                                <div className="flex justify-between items-center text-[8px] pt-1 border-t border-zinc-900/60">
+                                  <span className="text-zinc-600 font-mono">ID: {item.id}</span>
+                                  <span className="text-zinc-505">
+                                    {new Date(item.createdAt || Date.now()).toLocaleString('en-IN', { timeZone: 'IST' })}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    // Direct Chat Tab
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between text-[10px] text-zinc-400 font-bold uppercase tracking-wider pb-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span> Live Admin Chat (सीधा संपर्क)
+                        </span>
+                        <span className="text-zinc-60 font-mono text-[8px]">Real-time Sync Active</span>
+                      </div>
+
+                      {/* Chat Messages Log */}
+                      <div className="min-h-[200px] max-h-[300px] overflow-y-auto bg-black/60 border border-zinc-850 p-3 rounded-xl space-y-3 custom-scrollbar flex flex-col">
+                        {myChatMessages.length === 0 ? (
+                          <div className="my-auto text-center p-6 space-y-2">
+                            <p className="text-zinc-500 text-xs italic">👋 Bhaiya, seedha Admin se chat karein! Yahan apna message likh kar bhejein.</p>
+                            <span className="inline-block text-[9px] bg-zinc-900 border border-zinc-800 text-zinc-500 rounded px-2.5 py-1">Type your message below and press send.</span>
+                          </div>
+                        ) : (
+                          myChatMessages.map((msg) => {
+                            const isUser = msg.sender === 'user';
+                            return (
+                              <div
+                                key={msg.id || msg.createdAt}
+                                className={`flex flex-col max-w-[85%] ${
+                                  isUser ? 'self-end items-end' : 'self-start items-start'
+                                }`}
+                              >
+                                <span className="text-[8px] font-bold text-zinc-500 mb-0.5 px-1 font-mono">
+                                  {isUser ? "You" : `Admin`}
+                                </span>
+                                <div
+                                  className={`p-3 rounded-2xl text-xs leading-relaxed font-sans break-words ${
+                                    isUser
+                                      ? 'bg-red-650 text-white rounded-tr-none shadow-md shadow-red-950/10'
+                                      : 'bg-zinc-900/90 text-zinc-100 border border-zinc-800 rounded-tl-none'
+                                  }`}
+                                >
+                                  {msg.message}
+                                </div>
+                                <span className="text-[7.5px] text-zinc-600 mt-0.5 px-1 font-mono">
+                                  {new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Chat Input Field / Send Area */}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={myChatText}
+                          onChange={(e) => setMyChatText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              sendUserChatMessage();
+                            }
+                          }}
+                          placeholder="Type your message / यहाँ लिखें..."
+                          className="flex-1 bg-black text-white text-xs border border-zinc-850 rounded-xl px-3.5 py-3 outline-none focus:border-red-500 transition-colors"
+                          disabled={isSendingChatMessage}
+                        />
+                        <button
+                          onClick={sendUserChatMessage}
+                          disabled={isSendingChatMessage || !myChatText.trim()}
+                          className="px-4 bg-red-650 hover:bg-red-700 text-white rounded-xl transition-all flex items-center justify-center disabled:opacity-40 disabled:pointer-events-none hover:scale-[1.02] active:scale-[0.98] duration-150"
+                        >
+                          {isSendingChatMessage ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Send className="w-4 h-4 text-white" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-black/40 border border-zinc-800 p-3 rounded-2xl flex justify-between items-center px-4">
@@ -4206,9 +5042,9 @@ export default function App() {
                 <div className="text-6xl hidden sm:block">💥</div>
                 <div className="text-center sm:text-left">
                   <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center justify-center sm:justify-start gap-2">
-                    <ShieldAlert className="w-6 h-6" /> CRASHED!
+                    <ShieldAlert className="w-6 h-6" /> {t.statusCrashed || "CRASHED!"}
                   </h3>
-                  <p className="text-lg italic font-serif leading-tight">"{crashReason}"</p>
+                  <p className="text-lg italic font-serif leading-tight">"{getTranslatedCrashReason(crashReason || "", language)}"</p>
                 </div>
               </motion.div>
             )}

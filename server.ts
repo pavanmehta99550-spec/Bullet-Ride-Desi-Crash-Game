@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
+import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { initializeApp as initializeClientApp, getApps as getClientApps } from "firebase/app";
 import { 
@@ -325,6 +326,45 @@ async function startServer() {
 
   app.post("/api/test-route", (req, res) => {
       res.json({ status: "test-ok" });
+  });
+
+  app.post("/api/translate", async (req, res) => {
+    try {
+      const { text, targetLanguage } = req.body;
+      if (!text || !text.trim()) {
+        return res.status(400).json({ error: "Text is empty" });
+      }
+      
+      const targetLang = targetLanguage === "Hindi" ? "Hindi (India)" : "English (United Kingdom / United States)";
+      
+      const geminiApiKey = process.env.GEMINI_API_KEY;
+      if (!geminiApiKey) {
+        console.warn("[TRANSLATION] GEMINI_API_KEY is not defined in environments.");
+        return res.status(500).json({ error: "Gemini API key is not configured" });
+      }
+
+      const aiGen = new GoogleGenAI({
+        apiKey: geminiApiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const response = await aiGen.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: `Translate the following text into natural, accurate, and easy-to-read ${targetLang}. Keep the meaning and context intact, and if it's casual chat, make it conversational. Return ONLY the translated string and absolutely nothing else. No preamble, no quotes, no extra notes.
+
+Text: "${text.trim()}"`,
+      });
+
+      const translatedText = response.text ? response.text.trim() : "";
+      return res.json({ translatedText });
+    } catch (err: any) {
+      console.error("Translation api failed:", err);
+      return res.status(500).json({ error: "Translation API failed: " + err.message });
+    }
   });
 
   // --- DEPOSIT & WITHDRAWAL ROUTES ---
