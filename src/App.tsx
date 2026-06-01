@@ -833,19 +833,25 @@ export default function App() {
   const registerActiveBetValue = async (uid: string, roundId: string, amount: number, coin: string) => {
     if (!db || !roundId) return;
     try {
+      let usdValue = amount;
       let inrValue = amount;
-      if (coin !== 'INR') {
+      if (coin === 'INR') {
+        usdValue = amount * 0.012;
+        inrValue = amount;
+      } else {
         const rate = rates[coin] || 1;
-        inrValue = amount * rate;
+        usdValue = amount * rate;
+        inrValue = usdValue / 0.012;
       }
       await setDoc(doc(db, 'gameBets', roundId, 'bets', uid), {
         userId: uid,
         amount,
         coin,
+        usdValue: parseFloat(usdValue.toFixed(4)),
         inrValue: parseFloat(inrValue.toFixed(2)),
         timestamp: Date.now()
       });
-      console.log(`[BET REGISTERED] Round ${roundId}: Placed ${amount} ${coin} (≈ ₹${inrValue.toFixed(2)})`);
+      console.log(`[BET REGISTERED] Round ${roundId}: Placed ${amount} ${coin} (≈ $${usdValue.toFixed(4)} USD / ₹${inrValue.toFixed(2)} INR)`);
     } catch (err) {
       console.warn("[BET REGISTERED] Failed to save active bet:", err);
     }

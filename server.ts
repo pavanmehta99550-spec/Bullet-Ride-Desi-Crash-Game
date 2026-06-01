@@ -118,7 +118,7 @@ async function startServer() {
 
   // Mock prices for dynamic limits in USD: 1 Coin = X USD
   const cryptoPrices: Record<string, number> = {
-    BTC: 65000, ETH: 3500, USDT: 1, SOL: 150, DOGE: 0.15, LTC: 80, TRX: 0.12, BNB: 600, XRP: 0.5, MATIC: 0.7, TON: 6, ADA: 0.45, BCH: 450, DASH: 35, DGB: 0.01, FEY: 0.001, LINK: 15, DOT: 7
+    BTC: 65000, ETH: 3500, USDT: 1, SOL: 150, DOGE: 0.15, LTC: 80, TRX: 0.12, BNB: 600, XRP: 0.5, MATIC: 0.7, TON: 6, ADA: 0.45, BCH: 450, DASH: 35, DGB: 0.01, FEY: 0.001, LINK: 15, DOT: 7, INR: 0.012
   };
 
   const getLimits = (symbol: string) => {
@@ -866,6 +866,7 @@ async function startServer() {
     const now = Date.now();
     if (globalRound.status === 'WAITING' && now >= globalRound.startTime) {
       // Fetch live bets for active round and adjust crash point dynamically to prevent developer/system losses
+      let totalBetsUsd = 0;
       let totalBetsInr = 0;
       let hasBets = false;
       try {
@@ -873,8 +874,30 @@ async function startServer() {
           const betsSnap = await getDocs(collection(db, 'gameBets', globalRound.roundId, 'bets'));
           betsSnap.forEach((d: any) => {
             const betData = d.data();
-            if (betData && typeof betData.inrValue === 'number') {
-              totalBetsInr += betData.inrValue;
+            if (betData) {
+              let betUsd = 0;
+              let betInr = 0;
+
+              if (typeof betData.usdValue === 'number') {
+                betUsd = betData.usdValue;
+              } else if (typeof betData.amount === 'number' && betData.coin) {
+                if (betData.coin === 'INR') {
+                  betUsd = betData.amount * 0.012;
+                } else {
+                  const rate = cryptoPrices[betData.coin] || 1;
+                  betUsd = betData.amount * rate;
+                }
+              } else if (typeof betData.inrValue === 'number') {
+                if (betData.coin && betData.coin !== 'INR') {
+                  betUsd = betData.inrValue;
+                } else {
+                  betUsd = betData.inrValue * 0.012;
+                }
+              }
+
+              betInr = betUsd / 0.012;
+              totalBetsUsd += betUsd;
+              totalBetsInr += betInr;
               hasBets = true;
             }
           });
@@ -883,29 +906,29 @@ async function startServer() {
         console.error("[LOOP RISK CONTROL] Failed to fetch live round bets:", err);
       }
 
-      if (hasBets && totalBetsInr > 0) {
+      if (hasBets && totalBetsUsd > 0) {
         let cp = globalRound.crashPoint;
         const originalCp = cp;
         let adjusted = false;
 
-        if (totalBetsInr >= 5000) {
-          // Extremely high total bets -> Instant crash to lock losses (1.01x - 1.10x)
+        if (totalBetsUsd >= 60.0) {
+          // Extremely high total bets (>= $60 USD, equivalent to ₹5000+ INR) -> Instant crash to lock losses (1.01x - 1.10x)
           cp = parseFloat((1.01 + Math.random() * 0.09).toFixed(2));
           adjusted = true;
-        } else if (totalBetsInr >= 2000) {
-          // Very high bets -> Low crash (1.05x - 1.25x)
+        } else if (totalBetsUsd >= 24.0) {
+          // Very high bets (>= $24 USD, equivalent to ₹2000+ INR) -> Low crash (1.05x - 1.25x)
           cp = parseFloat((1.05 + Math.random() * 0.20).toFixed(2));
           adjusted = true;
-        } else if (totalBetsInr >= 1000) {
-          // High bets -> Restricted crash (1.10x - 1.45x)
+        } else if (totalBetsUsd >= 12.0) {
+          // High bets (>= $12 USD, equivalent to ₹1000+ INR) -> Restricted crash (1.10x - 1.45x)
           cp = parseFloat((1.10 + Math.random() * 0.35).toFixed(2));
           adjusted = true;
-        } else if (totalBetsInr >= 500) {
-          // Medium bets -> Mild restriction (1.15x - 1.70x)
+        } else if (totalBetsUsd >= 6.0) {
+          // Medium bets (>= $6 USD, equivalent to ₹500+ INR) -> Mild restriction (1.15x - 1.70x)
           cp = parseFloat((1.15 + Math.random() * 0.55).toFixed(2));
           adjusted = true;
         } else {
-          // Small bets (less than 500 INR) -> Give user some healthy profit! (1.50x to 3.50x)
+          // Small bets (< $6 USD, equivalent to < ₹500 INR) -> Give user some healthy profit! (1.50x to 3.50x)
           cp = parseFloat((1.50 + Math.random() * 2.0).toFixed(2));
           adjusted = true;
         }
@@ -917,7 +940,7 @@ async function startServer() {
           } else {
             globalRound.crashReason = "Safe Low-Stakes Fuel Empty! ⛽";
           }
-          console.log(`[RISK CONTROL] Total bet ₹${totalBetsInr.toFixed(2)} on Round ${globalRound.roundId}. Adjusted crash point from ${originalCp}x to ${cp}x: ${globalRound.crashReason}`);
+          console.log(`[RISK CONTROL] Total bet: $${totalBetsUsd.toFixed(4)} USD (≈ ₹${totalBetsInr.toFixed(2)} INR) on Round ${globalRound.roundId}. Adjusted crash point from ${originalCp}x to ${cp}x: ${globalRound.crashReason}`);
         }
       }
 
