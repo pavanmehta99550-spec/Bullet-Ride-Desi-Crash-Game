@@ -22,6 +22,7 @@ import { SearchableCoinDropdown } from './components/SearchableCoinDropdown';
 import { cryptoConfig } from './lib/cryptoConfig';
 import { formatBetAmount, calculateFiatValue } from './lib/conversion';
 import { audioManager } from './lib/audio';
+import { translations } from './lib/translations';
 
 interface GameHistory {
   id: string | number;
@@ -125,6 +126,16 @@ export default function App() {
   const [hasActiveBet, setHasActiveBet] = useState(false);
   const [winPopup, setWinPopup] = useState<{ amount: number; multiplier: number; coin: string } | null>(null);
   const [isMuted, setIsMuted] = useState(audioManager.getMutedState());
+  const [language, setLanguage] = useState<'en' | 'hi' | 'hinglish'>(() => {
+    try {
+      const saved = localStorage.getItem('aviator_language');
+      return (saved === 'en' || saved === 'hi' || saved === 'hinglish') ? (saved as 'en' | 'hi' | 'hinglish') : 'en';
+    } catch (_) { return 'en'; }
+  });
+
+  const t = useMemo(() => {
+    return translations[language] || translations.en;
+  }, [language]);
 
   const toggleSound = () => {
     const nextState = audioManager.toggleMute();
@@ -2621,6 +2632,28 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-4 md:gap-6">
+          {/* Language Selector */}
+          <div className="relative flex items-center">
+            <select
+              value={language}
+              onChange={(e) => {
+                const newLang = e.target.value as 'en' | 'hi' | 'hinglish';
+                setLanguage(newLang);
+                try {
+                  localStorage.setItem('aviator_language', newLang);
+                } catch (_) {}
+              }}
+              className="bg-black/40 border border-zinc-800 text-[11px] text-zinc-300 font-bold uppercase tracking-wider py-1 px-3.5 pr-8 rounded-lg focus:border-[#FFD700] hover:border-zinc-700 hover:text-white focus:outline-none transition-all cursor-pointer h-9 shrink-0 appearance-none text-center"
+            >
+              <option value="en" className="bg-zinc-950 text-white font-sans">🇬🇧 EN</option>
+              <option value="hi" className="bg-zinc-950 text-white font-sans">🇮🇳 हिंदी</option>
+              <option value="hinglish" className="bg-zinc-950 text-white font-sans">🗣️ HINGLISH</option>
+            </select>
+            <div className="absolute right-2.5 pointer-events-none text-zinc-500 text-[9px]">
+              ▼
+            </div>
+          </div>
+
           {/* Audio Sound Toggle */}
           <button 
             onClick={toggleSound}
@@ -2638,7 +2671,7 @@ export default function App() {
             <div className="flex items-center gap-4">
               <div className="hidden sm:flex items-center gap-3 border-r border-zinc-800 pr-6">
                 <div className="text-right leading-tight">
-                  <p className="text-[10px] uppercase tracking-widest text-[#888]">Fuel Balance</p>
+                  <p className="text-[10px] uppercase tracking-widest text-[#888]">{t.fuelBalance}</p>
                   {coinBalances[activeCoin] > 0 ? (
                     <p className="text-xl md:text-2xl font-mono text-[#FFD700]">
                       {activeCoin === 'INR' ? '₹' : ''}
@@ -2649,7 +2682,7 @@ export default function App() {
                       {activeCoin !== 'INR' ? ` ${activeCoin}` : ''}
                     </p>
                   ) : (
-                    <p className="text-xs font-black text-red-500 uppercase italic animate-pulse">Low Fuel! Please Deposit</p>
+                    <p className="text-xs font-black text-red-500 uppercase italic animate-pulse">{t.lowFuel}</p>
                   )}
                 </div>
                 <SearchableCoinDropdown coins={coins} activeCoin={activeCoin} onChange={handleCoinChange} />
@@ -3660,7 +3693,7 @@ export default function App() {
             <div className={`mt-4 inline-block px-6 py-2 border transition-all duration-300 ${
               isCrashed ? 'border-red-600 text-red-500 bg-red-600/10' : hasCashedOut ? 'border-green-500 text-green-500 bg-green-500/10' : isPlaying ? 'border-[#FFD700] text-[#FFD700] bg-[#FFD700]/10' : 'border-zinc-800 text-zinc-500'
             } text-lg md:text-xl font-black uppercase tracking-widest skew-x-[-10deg]`}>
-              {isCrashed ? 'CRASHED!' : hasCashedOut ? 'SUCCESSFUL EXIT' : isPlaying ? 'RIDING HARD' : (globalStatus === 'WAITING' ? 'READY IN GARAGE' : 'CONNECTING...')}
+              {isCrashed ? t.statusCrashed : hasCashedOut ? t.successfulExit : isPlaying ? t.ridingHard : (globalStatus === 'WAITING' ? t.readyInGarage : t.connecting)}
             </div>
             
             {globalStatus === 'WAITING' && (
@@ -3733,19 +3766,19 @@ export default function App() {
                 <div className="text-5xl animate-bounce shrink-0">🏆</div>
                 <div className="text-center sm:text-left flex-1 min-w-0">
                   <h3 className="text-xl font-black uppercase tracking-tight flex items-center justify-center sm:justify-start gap-1.5 text-yellow-300">
-                    🎉 SUCCESSFUL CLAIMS!
+                    🎉 {t.successfulClaims}
                   </h3>
                   <div className="mt-1 space-y-1.5">
                     <p className="text-zinc-100 text-xs font-semibold italic">
-                      "Sahi time par ride exiting! Badhiya control, bhai!" 🏍️
+                      {t.controlBhai}
                     </p>
                     <div className="flex flex-col gap-1 pr-1.5 w-full">
                       <div className="text-[10px] text-green-100 bg-white/10 px-2 py-1 rounded font-mono flex items-center justify-between">
-                        <span>EXIT MULTIPLIER:</span>
+                        <span>{t.exitMultiplier}</span>
                         <span className="font-black text-yellow-300">{winPopup.multiplier.toFixed(2)}x</span>
                       </div>
                       <div className="text-xs text-white bg-green-900/50 px-2 py-1.5 rounded font-sans flex items-center justify-between border border-green-400/20">
-                        <span>WIN AMOUNT:</span>
+                        <span>{t.winAmount}</span>
                         <span className="font-mono font-black text-lg text-yellow-300 animate-pulse">
                           {winPopup.coin === 'INR' ? '₹' : ''}
                           {winPopup.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
@@ -3754,7 +3787,7 @@ export default function App() {
                       </div>
                       <div className="text-[9px] text-emerald-200 text-center uppercase tracking-wider pt-0.5 flex items-center justify-center gap-1 font-bold">
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse" />
-                        Fuel Balance Added Successfully! ⛽
+                        {t.fuelAddedSuccess}
                       </div>
                     </div>
                   </div>
@@ -3814,11 +3847,11 @@ export default function App() {
                 onClick={startRound}
                 className="w-full py-4 mt-4 bg-[#FFD700] text-black font-black uppercase italic hover:bg-white transition-all shadow-[0_10px_30px_rgba(255,215,0,0.2)]"
             >
-                Place Bet {formatBetAmount(betAmount, activeCoin)} {activeCoin}
+                {t.placeBet} {formatBetAmount(betAmount, activeCoin)} {activeCoin}
             </button>
             
             <div className="flex justify-between items-center bg-black border-2 border-[#333] p-3 rounded mt-2">
-              <span className="text-[10px] uppercase font-bold text-[#888]">Auto Ride Mode (Auto-Bet)</span>
+              <span className="text-[10px] uppercase font-bold text-[#888]">{t.autoPlay} (Auto-Bet)</span>
               <button 
                 onClick={toggleAutoPlay}
                 className={`w-12 h-6 flex items-center rounded-full px-1 transition-colors ${isAutoPlay ? 'bg-green-600' : 'bg-zinc-800'}`}
@@ -3833,7 +3866,7 @@ export default function App() {
             </div>
 
             <div className="flex justify-between items-center bg-black border-2 border-[#333] p-3 rounded mt-2">
-              <span className="text-[10px] uppercase font-bold text-[#888]">Auto-Exit (Auto Cash Out)</span>
+              <span className="text-[10px] uppercase font-bold text-[#888]">{t.autoExit} (Auto Cash Out)</span>
               <button 
                 onClick={() => setIsAutoExit(!isAutoExit)}
                 className={`w-12 h-6 flex items-center rounded-full px-1 transition-colors ${isAutoExit ? 'bg-green-600' : 'bg-zinc-800'}`}
@@ -3948,16 +3981,16 @@ export default function App() {
               (isPlaying && hasActiveBet && !hasCashedOut) || (globalStatus === 'WAITING' && hasActiveBet) || isBetQueued ? 'text-white' : 'text-black'
             }`}>
               {isPlaying && hasActiveBet && !hasCashedOut 
-                ? `CASH OUT` 
+                ? t.cashOut 
                 : (globalStatus === 'WAITING' && hasActiveBet)
-                  ? `CANCEL BET`
+                  ? `CANCEL`
                   : (isPlaying && hasActiveBet && hasCashedOut) 
-                    ? 'CASHED OUT' 
+                    ? t.successfulExit 
                     : isBetQueued 
-                      ? `CANCEL BET` 
+                      ? `CANCEL` 
                       : isPlaying 
-                        ? `BET FOR NEXT RIDE` 
-                        : `BET ${betAmount} ${activeCoin}`}
+                        ? t.queuedForNext 
+                        : `${t.placeBet} ${formatBetAmount(betAmount, activeCoin)} ${activeCoin}`}
             </span>
           </button>
           
