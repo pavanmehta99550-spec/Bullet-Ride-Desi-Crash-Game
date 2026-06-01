@@ -126,10 +126,10 @@ export default function App() {
   const [hasActiveBet, setHasActiveBet] = useState(false);
   const [winPopup, setWinPopup] = useState<{ amount: number; multiplier: number; coin: string } | null>(null);
   const [isMuted, setIsMuted] = useState(audioManager.getMutedState());
-  const [language, setLanguage] = useState<'en' | 'hi' | 'hinglish'>(() => {
+  const [language, setLanguage] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('aviator_language');
-      return (saved === 'en' || saved === 'hi' || saved === 'hinglish') ? (saved as 'en' | 'hi' | 'hinglish') : 'en';
+      return (saved && translations[saved]) ? saved : 'en';
     } catch (_) { return 'en'; }
   });
 
@@ -195,6 +195,15 @@ export default function App() {
   useEffect(() => { hasActiveBetRef.current = hasActiveBet; }, [hasActiveBet]);
   useEffect(() => { hasCashedOutRef.current = hasCashedOut; }, [hasCashedOut]);
   useEffect(() => { activeCoinRef.current = activeCoin; }, [activeCoin]);
+
+  useEffect(() => {
+    if (winPopup) {
+      const timer = setTimeout(() => {
+        setWinPopup(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [winPopup]);
 
   useEffect(() => {
     const config = cryptoConfig[activeCoin];
@@ -2637,7 +2646,7 @@ export default function App() {
             <select
               value={language}
               onChange={(e) => {
-                const newLang = e.target.value as 'en' | 'hi' | 'hinglish';
+                const newLang = e.target.value;
                 setLanguage(newLang);
                 try {
                   localStorage.setItem('aviator_language', newLang);
@@ -2648,6 +2657,18 @@ export default function App() {
               <option value="en" className="bg-zinc-950 text-white font-sans">🇬🇧 EN</option>
               <option value="hi" className="bg-zinc-950 text-white font-sans">🇮🇳 हिंदी</option>
               <option value="hinglish" className="bg-zinc-950 text-white font-sans">🗣️ HINGLISH</option>
+              <option value="es" className="bg-zinc-950 text-white font-sans">🇪🇸 Español</option>
+              <option value="pt" className="bg-zinc-950 text-white font-sans">🇧🇷 Português</option>
+              <option value="ru" className="bg-zinc-950 text-white font-sans">🇷🇺 Русский</option>
+              <option value="ar" className="bg-zinc-950 text-white font-sans">🇸🇦 العربية</option>
+              <option value="fr" className="bg-zinc-950 text-white font-sans">🇫🇷 Français</option>
+              <option value="zh" className="bg-zinc-950 text-white font-sans">🇨🇳 中文</option>
+              <option value="de" className="bg-zinc-950 text-white font-sans">🇩🇪 Deutsch</option>
+              <option value="tr" className="bg-zinc-950 text-white font-sans">🇹🇷 Türkçe</option>
+              <option value="vi" className="bg-zinc-950 text-white font-sans">🇻🇳 Tiếng Việt</option>
+              <option value="id" className="bg-zinc-950 text-white font-sans">🇮🇩 B. Indonesia</option>
+              <option value="bn" className="bg-zinc-950 text-white font-sans">🇧🇩 বাংলা</option>
+              <option value="pa" className="bg-zinc-950 text-white font-sans">🇮🇳 ਪੰਜਾਬੀ</option>
             </select>
             <div className="absolute right-2.5 pointer-events-none text-zinc-500 text-[9px]">
               ▼
@@ -3741,57 +3762,50 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          {/* Cashout Success / Win Popup */}
+          {/* Cashout Success / Win Popup (Compact side pop toast) */}
           <AnimatePresence>
             {winPopup && (
               <motion.div
-                initial={{ opacity: 0, scale: 0.5, y: -100 }}
+                initial={{ opacity: 0, x: 100, scale: 0.8 }}
                 animate={{ 
                   opacity: 1, 
-                  scale: 1, 
-                  y: 0,
-                  transition: { type: "spring", stiffness: 300, damping: 15 }
+                  x: 0,
+                  scale: 1,
+                  transition: { type: "spring", stiffness: 350, damping: 20 }
                 }}
-                exit={{ opacity: 0, scale: 0.8, y: 50 }}
-                className="absolute top-1/2 -translate-y-1/2 z-30 bg-[#16A34A] px-8 py-6 text-white border-4 border-black shadow-[10px_10px_0_rgba(0,0,0,1)] flex flex-col sm:flex-row items-center gap-5 max-w-[95vw] sm:max-w-md w-full relative pointer-events-auto"
+                exit={{ opacity: 0, x: 100, scale: 0.8 }}
+                className="absolute top-4 right-4 z-40 bg-[#16A34A] p-4 text-white border-2 border-black shadow-[6px_6px_0_rgba(0,0,0,1)] flex items-center gap-3.5 max-w-[95vw] w-[340px] rounded-xl pointer-events-auto"
               >
+                <div className="text-3xl animate-bounce shrink-0">🏆</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-sm font-black uppercase tracking-tight text-yellow-300 truncate">
+                      {t.successfulClaims}
+                    </h4>
+                    <span className="font-mono text-xs font-black bg-black/30 px-1.5 py-0.5 rounded text-yellow-300 shrink-0">
+                      {winPopup.multiplier.toFixed(2)}x
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between gap-1">
+                    <span className="text-[10px] text-zinc-100 font-semibold uppercase tracking-wider">{t.winAmount}</span>
+                    <span className="font-mono font-black text-base text-yellow-100">
+                      {winPopup.coin === 'INR' ? '₹' : ''}
+                      {winPopup.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                      {winPopup.coin !== 'INR' ? ` ${winPopup.coin}` : ''}
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-emerald-100 font-medium tracking-wide mt-1 italic flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse shrink-0" />
+                    {t.fuelAddedSuccess}
+                  </p>
+                </div>
                 {/* Close Button */}
                 <button 
                   onClick={() => setWinPopup(null)}
-                  className="absolute top-2.5 right-2.5 text-white/70 hover:text-white transition-all bg-black/20 hover:bg-black/40 p-1 rounded-full cursor-pointer"
+                  className="text-white/60 hover:text-white transition-all bg-black/10 hover:bg-black/35 p-1 rounded-full cursor-pointer shrink-0 self-start -mt-1 -mr-1"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
-                
-                <div className="text-5xl animate-bounce shrink-0">🏆</div>
-                <div className="text-center sm:text-left flex-1 min-w-0">
-                  <h3 className="text-xl font-black uppercase tracking-tight flex items-center justify-center sm:justify-start gap-1.5 text-yellow-300">
-                    🎉 {t.successfulClaims}
-                  </h3>
-                  <div className="mt-1 space-y-1.5">
-                    <p className="text-zinc-100 text-xs font-semibold italic">
-                      {t.controlBhai}
-                    </p>
-                    <div className="flex flex-col gap-1 pr-1.5 w-full">
-                      <div className="text-[10px] text-green-100 bg-white/10 px-2 py-1 rounded font-mono flex items-center justify-between">
-                        <span>{t.exitMultiplier}</span>
-                        <span className="font-black text-yellow-300">{winPopup.multiplier.toFixed(2)}x</span>
-                      </div>
-                      <div className="text-xs text-white bg-green-900/50 px-2 py-1.5 rounded font-sans flex items-center justify-between border border-green-400/20">
-                        <span>{t.winAmount}</span>
-                        <span className="font-mono font-black text-lg text-yellow-300 animate-pulse">
-                          {winPopup.coin === 'INR' ? '₹' : ''}
-                          {winPopup.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
-                          {winPopup.coin !== 'INR' ? ` ${winPopup.coin}` : ''}
-                        </span>
-                      </div>
-                      <div className="text-[9px] text-emerald-200 text-center uppercase tracking-wider pt-0.5 flex items-center justify-center gap-1 font-bold">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse" />
-                        {t.fuelAddedSuccess}
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </motion.div>
             )}
           </AnimatePresence>
