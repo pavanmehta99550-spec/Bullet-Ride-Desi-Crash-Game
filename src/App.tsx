@@ -1604,6 +1604,7 @@ export default function App() {
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [userBalanceInputs, setUserBalanceInputs] = useState<Record<string, string>>({});
   const [userCoinSelections, setUserCoinSelections] = useState<Record<string, string>>({});
+  const [adminUserSearch, setAdminUserSearch] = useState('');
 
   const fetchAdminUsers = async () => {
     try {
@@ -1612,12 +1613,46 @@ export default function App() {
       snap.forEach(doc => {
         list.push({ ...doc.data(), uid: doc.id });
       });
+      
+      const getCreatedAtMs = (user: any) => {
+        if (!user) return 0;
+        const ts = user.createdAt || user.updatedAt;
+        if (!ts) return 0;
+        if (typeof ts === 'number') return ts;
+        if (typeof ts === 'object') {
+          if (typeof ts.seconds === 'number') {
+            return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+          }
+          if (typeof ts.toDate === 'function') {
+            return ts.toDate().getTime();
+          }
+        }
+        return 0;
+      };
+      
+      list.sort((a, b) => getCreatedAtMs(b) - getCreatedAtMs(a));
       setAdminUsers(list);
     } catch (err: any) {
       console.warn("Direct client-side load users failed, trying api fallback:", err.message || err);
       try {
         const data = await safeFetchJson('/api/admin/users');
-        setAdminUsers(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? [...data] : [];
+        
+        const getCreatedAtMs = (user: any) => {
+          if (!user) return 0;
+          const ts = user.createdAt || user.updatedAt;
+          if (!ts) return 0;
+          if (typeof ts === 'number') return ts;
+          if (typeof ts === 'object') {
+            if (typeof ts.seconds === 'number') {
+              return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+            }
+          }
+          return 0;
+        };
+        
+        list.sort((a, b) => getCreatedAtMs(b) - getCreatedAtMs(a));
+        setAdminUsers(list);
       } catch (fallbackErr: any) {
         console.warn("All attempts to load admin users failed:", fallbackErr.message || fallbackErr);
       }
@@ -3100,7 +3135,27 @@ export default function App() {
 
                   {/* Registered Users & Manually Add Fuel Balance Management */}
                   <div id="registered-users-fuel-mgt" className="mt-8 pt-6 border-t border-zinc-800 space-y-4">
-                    <h4 className="text-[#FFD700] font-bold text-xs uppercase tracking-widest">Registered User Fuel Balance Management</h4>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <h4 className="text-[#FFD700] font-bold text-xs uppercase tracking-widest">Registered User Fuel Balance Management</h4>
+                      <div className="relative w-full sm:w-72">
+                        <input
+                          type="text"
+                          placeholder="Search by Name, Email, or UID..."
+                          value={adminUserSearch}
+                          onChange={(e) => setAdminUserSearch(e.target.value)}
+                          className="w-full bg-black/50 border border-zinc-800 rounded px-3 py-1.5 text-xs text-white outline-none focus:border-[#FFD700] transition-colors"
+                        />
+                        {adminUserSearch && (
+                          <button 
+                            type="button"
+                            onClick={() => setAdminUserSearch('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white text-[10px] font-black"
+                          >
+                            CLEAR
+                          </button>
+                        )}
+                      </div>
+                    </div>
                     <div className="bg-black/40 border border-zinc-800 rounded overflow-hidden">
                       <div className="max-h-80 overflow-y-auto w-full">
                         <table className="w-full text-left text-xs min-w-[700px]">
@@ -3114,9 +3169,18 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-900">
-                            {adminUsers.map((u) => {
-                              const userComplaints = allComplaints.filter(c => c.userId === u.uid);
-                              const hasPending = userComplaints.some(c => c.status !== 'resolved');
+                            {adminUsers
+                              .filter((u) => {
+                                if (!adminUserSearch) return true;
+                                const search = adminUserSearch.toLowerCase();
+                                const name = (u.displayName || '').toLowerCase();
+                                const email = (u.email || '').toLowerCase();
+                                const uid = (u.uid || '').toLowerCase();
+                                return name.includes(search) || email.includes(search) || uid.includes(search);
+                              })
+                              .map((u) => {
+                                const userComplaints = allComplaints.filter(c => c.userId === u.uid);
+                                const hasPending = userComplaints.some(c => c.status !== 'resolved');
                               const isExpanded = expandedUserComplaintsUid === u.uid;
 
                               return (

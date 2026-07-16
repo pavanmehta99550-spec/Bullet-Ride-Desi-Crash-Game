@@ -606,6 +606,21 @@ Text: "${text.trim()}"`,
       const snap = await getDocs(collection(db, "users"));
       const list: any[] = [];
       snap.forEach(doc => list.push({ ...doc.data(), uid: doc.id }));
+      
+      const getCreatedAtMs = (user: any) => {
+        if (!user) return 0;
+        const ts = user.createdAt || user.updatedAt;
+        if (!ts) return 0;
+        if (typeof ts === 'number') return ts;
+        if (typeof ts === 'object') {
+          if (typeof ts.seconds === 'number') {
+            return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+          }
+        }
+        return 0;
+      };
+      
+      list.sort((a, b) => getCreatedAtMs(b) - getCreatedAtMs(a));
       res.json(list);
     } catch (e) {
       res.json([]);
