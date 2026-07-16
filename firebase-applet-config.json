@@ -1,10 +1,11 @@
 {
   "projectId": "clipnova-f259d",
-  "appId": "1:1021594403404:web:0d5d5f342378855947aae9",
+  "appId": "1:1021594403404:web:f9af9de3c42893ce47aae9",
   "apiKey": "AIzaSyAAylk4kI5has8jdwX0ef29vcRkLPoSoNw",
   "authDomain": "clipnova-f259d.firebaseapp.com",
   "firestoreDatabaseId": "(default)",
   "storageBucket": "clipnova-f259d.firebasestorage.app",
   "messagingSenderId": "1021594403404",
-  "measurementId": "G-5EFZFGXW7K"
+  "measurementId": "",
+  "recaptchaSiteKey": ""
 }

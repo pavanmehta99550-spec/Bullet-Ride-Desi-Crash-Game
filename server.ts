@@ -1085,7 +1085,7 @@ Text: "${text.trim()}"`,
   });
 
   const distPath = path.join(process.cwd(), "dist");
-  const isProd = process.env.NODE_ENV === "production" || fs.existsSync(path.join(distPath, "index.html"));
+  const isProd = process.env.NODE_ENV === "production" || (typeof __filename !== "undefined" && __filename.includes("dist"));
   
   if (!isProd) {
     const { createServer: createViteServer } = await import("vite");

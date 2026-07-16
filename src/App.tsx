@@ -2704,8 +2704,8 @@ export default function App() {
                             ];
                             saveAdminPromocodes(updated);
                             setNewPromoCode('');
-                            setNewPromoReward('');
-                            setNewPromoMaxUses('');
+                            setNewPromoReward('500');
+                            setNewPromoMaxUses('1000');
                           }}
                           className="w-full py-3 bg-[#FFD700] text-black font-black uppercase text-[11px] skew-x-[-10deg] tracking-widest hover:bg-white duration-200 shadow-[0_4px_15px_rgba(255,215,0,0.2)]"
                         >
@@ -3877,7 +3877,10 @@ export default function App() {
                           if (!user) return '';
                           let origin = window.location.origin;
                           if (!origin || origin === 'null' || origin.includes('aistudio.google.com')) {
-                            origin = 'https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app';
+                            return `https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app/?ref=${user.uid}`;
+                          }
+                          if (origin.includes('-dev-')) {
+                            origin = origin.replace('-dev-', '-pre-');
                           }
                           return `${origin}/?ref=${user.uid}`;
                         })()}
@@ -3888,10 +3891,15 @@ export default function App() {
                           try {
                             if (!user) return;
                             let origin = window.location.origin;
+                            let publicLink = '';
                             if (!origin || origin === 'null' || origin.includes('aistudio.google.com')) {
-                              origin = 'https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app';
+                              publicLink = `https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app/?ref=${user.uid}`;
+                            } else {
+                              if (origin.includes('-dev-')) {
+                                origin = origin.replace('-dev-', '-pre-');
+                              }
+                              publicLink = `${origin}/?ref=${user.uid}`;
                             }
-                            const publicLink = `${origin}/?ref=${user.uid}`;
                             navigator.clipboard.writeText(publicLink);
                             setCopied(true);
                             setTimeout(() => setCopied(false), 2000);
