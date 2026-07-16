@@ -339,6 +339,9 @@ export class GameAudioManager {
     localStorage.setItem('game_sound_muted', String(this.isMuted));
     
     if (this.isMuted) {
+      if (this.ctx) {
+        this.ctx.suspend().catch(() => {});
+      }
       if (this.bikeEngine) {
         this.bikeEngine.stop();
       }

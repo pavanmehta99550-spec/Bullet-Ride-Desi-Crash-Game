@@ -341,7 +341,11 @@ export default function App() {
     try {
       const data = await safeFetchJson('/api/config/crypto');
       if (Array.isArray(data) && data.length > 0) {
-        setCoins(data);
+        const updatedCoins = data.map((c: any) => ({
+          ...c,
+          isVisible: c.isVisible !== undefined ? c.isVisible : true
+        }));
+        setCoins(updatedCoins);
       }
     } catch (err: any) {
       console.warn("Load coins failed:", err.message || err);
@@ -432,7 +436,11 @@ export default function App() {
         const snapData = snapshot.data();
         if (snapData) {
           if (Array.isArray(snapData.cryptoCoins)) {
-            setCoins(snapData.cryptoCoins);
+            const updatedCoins = snapData.cryptoCoins.map((c: any) => ({
+              ...c,
+              isVisible: c.isVisible !== undefined ? c.isVisible : true
+            }));
+            setCoins(updatedCoins);
           }
           if (snapData.adminPasscode) {
             setAdminPasscode(snapData.adminPasscode);

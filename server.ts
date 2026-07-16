@@ -1,8 +1,8 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import cors from "cors";
 import { GoogleGenAI } from "@google/genai";
-import { createServer as createViteServer } from "vite";
 import { initializeApp as initializeClientApp, getApps as getClientApps } from "firebase/app";
 import { 
   getFirestore as getClientFirestore, 
@@ -1084,11 +1084,14 @@ Text: "${text.trim()}"`,
     });
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  const isProd = process.env.NODE_ENV === "production" || fs.existsSync(path.join(distPath, "index.html"));
+  
+  if (!isProd) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
