@@ -3873,13 +3873,30 @@ export default function App() {
                       <input 
                         type="text" 
                         readOnly 
-                        value={`${window.location.origin}/?ref=${user.uid}`}
+                        value={(() => {
+                          if (!user) return '';
+                          let origin = window.location.origin;
+                          if (origin.includes('-dev-')) {
+                            origin = origin.replace('-dev-', '-pre-');
+                          } else if (origin.includes('aistudio.google.com')) {
+                            origin = 'https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app';
+                          }
+                          return `${origin}/?ref=${user.uid}`;
+                        })()}
                         className="flex-1 bg-black/60 border border-zinc-800 text-zinc-400 font-mono text-xs rounded-xl px-3 py-2 outline-none select-all"
                       />
                       <button 
                         onClick={() => {
                           try {
-                            navigator.clipboard.writeText(`${window.location.origin}/?ref=${user.uid}`);
+                            if (!user) return;
+                            let origin = window.location.origin;
+                            if (origin.includes('-dev-')) {
+                              origin = origin.replace('-dev-', '-pre-');
+                            } else if (origin.includes('aistudio.google.com')) {
+                              origin = 'https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app';
+                            }
+                            const publicLink = `${origin}/?ref=${user.uid}`;
+                            navigator.clipboard.writeText(publicLink);
                             setCopied(true);
                             setTimeout(() => setCopied(false), 2000);
                           } catch (_) {}

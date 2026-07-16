@@ -3,6 +3,7 @@
 
 class BikeEngine {
   private ctx: AudioContext | null = null;
+  private parentMasterGain: GainNode | null = null;
   private osc1: OscillatorNode | null = null;
   private osc2: OscillatorNode | null = null;
   private harmonicOsc: OscillatorNode | null = null;
@@ -12,8 +13,9 @@ class BikeEngine {
   private pulseGain: GainNode | null = null;
   private active: boolean = false;
 
-  constructor(ctx: AudioContext | null) {
+  constructor(ctx: AudioContext | null, parentMasterGain: GainNode | null = null) {
     this.ctx = ctx;
+    this.parentMasterGain = parentMasterGain;
   }
 
   start() {
@@ -71,7 +73,11 @@ class BikeEngine {
 
       this.pulseGain.connect(this.filter);
       this.filter.connect(this.masterGain);
-      this.masterGain.connect(this.ctx.destination);
+      if (this.parentMasterGain) {
+        this.masterGain.connect(this.parentMasterGain);
+      } else {
+        this.masterGain.connect(this.ctx.destination);
+      }
 
       // Start everything
       this.lfo.start();
@@ -158,7 +164,7 @@ class BikeEngine {
 }
 
 // Lowpass/Bandpass filtered white noise burst + sweet explosion drop
-function playCrashSound(ctx: AudioContext) {
+function playCrashSound(ctx: AudioContext, masterGain: GainNode | null = null) {
   try {
     const time = ctx.currentTime;
     
@@ -196,10 +202,18 @@ function playCrashSound(ctx: AudioContext) {
     // Connections
     noise.connect(filter);
     filter.connect(noiseGain);
-    noiseGain.connect(ctx.destination);
+    if (masterGain) {
+      noiseGain.connect(masterGain);
+    } else {
+      noiseGain.connect(ctx.destination);
+    }
 
     lowOsc.connect(oscGain);
-    oscGain.connect(ctx.destination);
+    if (masterGain) {
+      oscGain.connect(masterGain);
+    } else {
+      oscGain.connect(ctx.destination);
+    }
 
     // Fire nodes
     noise.start(time);
@@ -213,7 +227,7 @@ function playCrashSound(ctx: AudioContext) {
 }
 
 // Sweet pentatonic ring chimes + brief filtered cheering applause swell
-function playCheerSound(ctx: AudioContext) {
+function playCheerSound(ctx: AudioContext, masterGain: GainNode | null = null) {
   try {
     const time = ctx.currentTime;
 
@@ -242,7 +256,11 @@ function playCheerSound(ctx: AudioContext) {
 
     crowd.connect(bandpass);
     bandpass.connect(crowdGain);
-    crowdGain.connect(ctx.destination);
+    if (masterGain) {
+      crowdGain.connect(masterGain);
+    } else {
+      crowdGain.connect(ctx.destination);
+    }
     crowd.start(time);
     crowd.stop(time + 1.0);
 
@@ -261,7 +279,11 @@ function playCheerSound(ctx: AudioContext) {
       gainNode.gain.exponentialRampToValueAtTime(0.0001, time + index * 0.05 + 0.32);
 
       osc.connect(gainNode);
-      gainNode.connect(ctx.destination);
+      if (masterGain) {
+        gainNode.connect(masterGain);
+      } else {
+        gainNode.connect(ctx.destination);
+      }
 
       osc.start(time + index * 0.05);
       osc.stop(time + index * 0.05 + 0.4);
@@ -273,6 +295,7 @@ function playCheerSound(ctx: AudioContext) {
 
 export class GameAudioManager {
   private ctx: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
   private bikeEngine: BikeEngine | null = null;
   private isMuted: boolean = false;
 
@@ -283,13 +306,14 @@ export class GameAudioManager {
 
       // Create standard browser interaction listener to instantly unlock / resume AudioContext
       const unlock = () => {
-        if (this.isMuted) return;
-
         if (!this.ctx) {
           const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
           if (AudioCtx) {
             this.ctx = new AudioCtx();
-            this.bikeEngine = new BikeEngine(this.ctx);
+            this.masterGain = this.ctx.createGain();
+            this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 1, this.ctx.currentTime);
+            this.masterGain.connect(this.ctx.destination);
+            this.bikeEngine = new BikeEngine(this.ctx, this.masterGain);
           }
         }
 
@@ -321,12 +345,14 @@ export class GameAudioManager {
   }
 
   private initContext() {
-    if (this.isMuted) return;
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
-        this.bikeEngine = new BikeEngine(this.ctx);
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 1, this.ctx.currentTime);
+        this.masterGain.connect(this.ctx.destination);
+        this.bikeEngine = new BikeEngine(this.ctx, this.masterGain);
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
@@ -338,15 +364,19 @@ export class GameAudioManager {
     this.isMuted = !this.isMuted;
     localStorage.setItem('game_sound_muted', String(this.isMuted));
     
+    // Ensure context is initialized so we can set masterGain volume
+    this.initContext();
+
+    if (this.ctx && this.masterGain) {
+      const targetVolume = this.isMuted ? 0 : 1;
+      this.masterGain.gain.setValueAtTime(targetVolume, this.ctx.currentTime);
+    }
+    
     if (this.isMuted) {
-      if (this.ctx) {
-        this.ctx.suspend().catch(() => {});
-      }
       if (this.bikeEngine) {
         this.bikeEngine.stop();
       }
     } else {
-      this.initContext();
       if (this.ctx && this.ctx.state === 'suspended') {
         this.ctx.resume().catch(() => {});
       }
@@ -385,7 +415,7 @@ export class GameAudioManager {
     this.initContext();
     this.stopRide(); // Stop ride engine immediately
     if (this.ctx) {
-      playCrashSound(this.ctx);
+      playCrashSound(this.ctx, this.masterGain);
     }
   }
 
@@ -393,7 +423,7 @@ export class GameAudioManager {
     if (this.isMuted) return;
     this.initContext();
     if (this.ctx) {
-      playCheerSound(this.ctx);
+      playCheerSound(this.ctx, this.masterGain);
     }
   }
 }
