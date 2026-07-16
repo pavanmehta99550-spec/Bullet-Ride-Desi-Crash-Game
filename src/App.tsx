@@ -3876,10 +3876,8 @@ export default function App() {
                         value={(() => {
                           if (!user) return '';
                           let origin = window.location.origin;
-                          if (origin.includes('-dev-')) {
-                            origin = origin.replace('-dev-', '-pre-');
-                          } else if (origin.includes('aistudio.google.com')) {
-                            origin = 'https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app';
+                          if (!origin || origin === 'null' || origin.includes('aistudio.google.com')) {
+                            origin = 'https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app';
                           }
                           return `${origin}/?ref=${user.uid}`;
                         })()}
@@ -3890,10 +3888,8 @@ export default function App() {
                           try {
                             if (!user) return;
                             let origin = window.location.origin;
-                            if (origin.includes('-dev-')) {
-                              origin = origin.replace('-dev-', '-pre-');
-                            } else if (origin.includes('aistudio.google.com')) {
-                              origin = 'https://ais-pre-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app';
+                            if (!origin || origin === 'null' || origin.includes('aistudio.google.com')) {
+                              origin = 'https://ais-dev-zyv7gx6kmtq6krourr7sy7-814520408801.asia-southeast1.run.app';
                             }
                             const publicLink = `${origin}/?ref=${user.uid}`;
                             navigator.clipboard.writeText(publicLink);
