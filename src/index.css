@@ -8,7 +8,8 @@
 
 @layer base {
   body {
-    @apply bg-[#0F0F0F] text-[#F5F5F5] antialiased overflow-hidden;
-    overscroll-behavior: none;
+    @apply bg-[#0F0F0F] text-[#F5F5F5] antialiased;
+    -webkit-overflow-scrolling: touch;
+    touch-action: manipulation;
   }
 }

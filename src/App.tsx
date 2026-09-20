@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldAlert, RefreshCw, Bike, Gauge, User, History, 
   ChevronRight, LogIn, LogOut, Mail, Lock, Chrome, Loader2, X,
-  Volume2, VolumeX, Gift, Trophy, Edit3, Check, MessageSquare, Send, Languages, Globe, Trash2
+  Volume2, VolumeX, Gift, Trophy, Edit3, Check, MessageSquare, Send, Languages, Globe, Trash2,
+  ZoomIn, ZoomOut, ChevronDown, Maximize2, Dices
 } from 'lucide-react';
 import { 
   auth, googleProvider, syncUserProfile, 
@@ -18,6 +19,7 @@ import {
 import { collection, query, where, orderBy, limit, onSnapshot, doc, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import AuthModal from './components/AuthModal';
+import LudoGame from './components/LudoGame';
 import { SearchableCoinDropdown } from './components/SearchableCoinDropdown';
 import { cryptoConfig } from './lib/cryptoConfig';
 import { formatBetAmount, calculateFiatValue } from './lib/conversion';
@@ -38,6 +40,40 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+
+  // Mobile Screen Zoom / Scaling State (Chota / Bada)
+  const [uiZoom, setUiZoom] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('bullet_ride_ui_zoom');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= 65 && parsed <= 140) return parsed;
+        }
+      } catch (_) {}
+    }
+    return 100;
+  });
+
+  const [isHistoryExpandedMobile, setIsHistoryExpandedMobile] = useState(false);
+  const [activeGame, setActiveGame] = useState<'crash' | 'ludo'>('crash');
+
+  const changeZoom = (delta: number) => {
+    setUiZoom((prev) => {
+      const next = Math.min(130, Math.max(70, prev + delta));
+      try {
+        localStorage.setItem('bullet_ride_ui_zoom', next.toString());
+      } catch (_) {}
+      return next;
+    });
+  };
+
+  const resetZoom = () => {
+    setUiZoom(100);
+    try {
+      localStorage.setItem('bullet_ride_ui_zoom', '100');
+    } catch (_) {}
+  };
 
   const [multiplier, setMultiplier] = useState(1.00);
   const [coins, setCoins] = useState<{name: string, symbol: string, color: string, address: string, isVisible: boolean}[]>([
@@ -73,7 +109,7 @@ export default function App() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [myGameHistory, setMyGameHistory] = useState<any[]>([]);
   const [isMyHistoryLoading, setIsMyHistoryLoading] = useState(true);
-  const [historyTab, setHistoryTab] = useState<'global' | 'personal'>('global');
+  const [historyTab, setHistoryTab] = useState<'global' | 'personal' | 'top'>('global');
   const [betAmount, setBetAmount] = useState(500);
   
   // Referral, Promo Codes and Deposit Unlock states
@@ -664,7 +700,7 @@ export default function App() {
           const rawActiveCoin = profileData.activeCoin || 'USDT';
           const curActiveCoin = rawActiveCoin === 'INR' ? 'USDT' : rawActiveCoin;
           const dBalances = profileData.coinBalances || {};
-          const mergedBalances = {
+          const mergedBalances: Record<string, number> = {
             INR: dBalances.INR !== undefined ? dBalances.INR : (profileData.walletBalance || 0),
             BTC: dBalances.BTC || 0,
             ETH: dBalances.ETH || 0,
@@ -740,7 +776,7 @@ export default function App() {
         const rawActiveCoin = data.activeCoin || 'USDT';
         const curActiveCoin = rawActiveCoin === 'INR' ? 'USDT' : rawActiveCoin;
         const dBalances = data.coinBalances || {};
-        const mergedBalances = {
+        const mergedBalances: Record<string, number> = {
           INR: dBalances.INR !== undefined ? dBalances.INR : (data.walletBalance || 0),
           BTC: dBalances.BTC || 0,
           ETH: dBalances.ETH || 0,
@@ -920,7 +956,7 @@ export default function App() {
         const rawActiveCoin = profileData.activeCoin || 'USDT';
         const curActiveCoin = rawActiveCoin === 'INR' ? 'USDT' : rawActiveCoin;
         const dBalances = profileData.coinBalances || {};
-        const mergedBalances = {
+        const mergedBalances: Record<string, number> = {
           INR: dBalances.INR !== undefined ? dBalances.INR : (profileData.walletBalance || 0),
           BTC: dBalances.BTC || 0,
           ETH: dBalances.ETH || 0,
@@ -1046,7 +1082,7 @@ export default function App() {
           setHasActiveBet(true);
           updateUserBalance(currentUser.uid, balanceRef.current - betAmountRef.current, activeCoinRef.current);
           setWithdrawableBalance(prev => Math.max(0, prev - betAmountRef.current));
-          registerActiveBetValue(currentUser.uid, globalRoundIdRef.current, betAmountRef.current, activeCoinRef.current);
+          registerActiveBetValue(currentUser.uid, globalRoundIdRef.current || 'global', betAmountRef.current, activeCoinRef.current);
        } else {
           setError("Balance kam hai bhai!");
           setTimeout(() => setError(null), 3000);
@@ -1289,7 +1325,7 @@ export default function App() {
           setHasActiveBet(true);
           updateUserBalance(user.uid, balance - betAmount, activeCoin);
           setWithdrawableBalance(prev => Math.max(0, prev - betAmount));
-          registerActiveBetValue(user.uid, globalRoundIdRef.current, betAmount, activeCoin);
+          registerActiveBetValue(user.uid, globalRoundIdRef.current || 'global', betAmount, activeCoin);
         } else {
           setError("Balance kam hai bhai!");
           setTimeout(() => setError(null), 3000);
@@ -2409,7 +2445,7 @@ export default function App() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col w-full bg-[#0F0F0F] text-[#F5F5F5] font-sans border-zinc-800 overflow-hidden overscroll-none select-none">
+    <div className="min-h-screen w-full flex flex-col bg-[#0F0F0F] text-[#F5F5F5] font-sans border-zinc-800 overflow-x-hidden md:h-screen md:overflow-hidden relative">
       {/* Auth Modal */}
       <AuthModal 
         isOpen={showAuthModal} 
@@ -3593,12 +3629,43 @@ export default function App() {
       </div>
 
       {/* Header Section */}
-      <header className="flex items-center justify-between p-4 md:p-6 bg-gradient-to-r from-[#1A1A1A] to-[#0F0F0F] border-b border-[#333] sticky top-0 z-30">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 md:w-12 md:h-12 bg-[#FFD700] rounded-full flex items-center justify-center text-black font-black text-xl md:text-2xl border-2 border-white shadow-[0_0_15px_rgba(255,215,0,0.4)]">B</div>
-          <h1 className="text-2xl md:text-4xl font-black tracking-tighter uppercase italic text-white flex items-center gap-2">
+      <header className="flex items-center justify-between p-3 md:p-5 bg-gradient-to-r from-[#1A1A1A] to-[#0F0F0F] border-b border-[#333] sticky top-0 z-30">
+        <div className="flex items-center gap-3 md:gap-5">
+          <div className="w-9 h-9 md:w-11 md:h-11 bg-[#FFD700] rounded-full flex items-center justify-center text-black font-black text-lg md:text-2xl border-2 border-white shadow-[0_0_15px_rgba(255,215,0,0.4)] shrink-0">B</div>
+          <h1 className="hidden sm:flex text-xl md:text-3xl font-black tracking-tighter uppercase italic text-white items-center gap-2">
             Bullet Ride <span className="text-[#FFD700]">350</span>
           </h1>
+
+          {/* Game Selection Mode Switcher: Bullet Crash vs Shahi Ludo */}
+          <div className="flex items-center bg-black/80 border border-zinc-700/80 p-1 rounded-xl shadow-inner">
+            <button
+              type="button"
+              onClick={() => setActiveGame('crash')}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                activeGame === 'crash'
+                  ? 'bg-[#FFD700] text-black shadow-md'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <Bike className="w-3.5 h-3.5" />
+              <span>Crash</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveGame('ludo')}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer relative ${
+                activeGame === 'ludo'
+                  ? 'bg-gradient-to-r from-[#FFD700] via-[#FFA500] to-[#FF8C00] text-black shadow-md'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <Dices className="w-3.5 h-3.5" />
+              <span>Ludo 6</span>
+              <span className="ml-0.5 text-[8px] bg-red-600 text-white font-mono px-1 py-0.2 rounded font-black animate-pulse">
+                NEW
+              </span>
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-4 md:gap-6">
           {/* Language Selector */}
@@ -3633,6 +3700,38 @@ export default function App() {
             <div className="absolute right-2.5 pointer-events-none text-zinc-500 text-[9px]">
               ▼
             </div>
+          </div>
+
+          {/* Zoom / Screen Scale Control (Chota / Bada) */}
+          <div className="flex items-center bg-black/60 border border-zinc-800 rounded-lg p-0.5 h-9 shrink-0 shadow-inner" title="Screen Zoom: Chota / Bada Karein">
+            <button 
+              type="button"
+              onClick={() => changeZoom(-10)}
+              disabled={uiZoom <= 70}
+              className="px-2 py-1 text-zinc-300 hover:text-[#FFD700] disabled:opacity-30 text-xs font-black transition-colors flex items-center gap-1 cursor-pointer"
+              title="Screen Chota Karein (Zoom Out)"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline text-[9px] uppercase font-bold">Chota</span>
+            </button>
+            <button 
+              type="button"
+              onClick={resetZoom}
+              className="px-1.5 py-0.5 text-[10px] font-mono font-black text-[#FFD700] hover:text-white border-x border-zinc-800 transition-colors"
+              title="Click to reset zoom to 100%"
+            >
+              {uiZoom}%
+            </button>
+            <button 
+              type="button"
+              onClick={() => changeZoom(10)}
+              disabled={uiZoom >= 130}
+              className="px-2 py-1 text-zinc-300 hover:text-[#FFD700] disabled:opacity-30 text-xs font-black transition-colors flex items-center gap-1 cursor-pointer"
+              title="Screen Bada Karein (Zoom In)"
+            >
+              <span className="hidden lg:inline text-[9px] uppercase font-bold">Bada</span>
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Audio Sound Toggle */}
@@ -3702,7 +3801,7 @@ export default function App() {
           )}
 
           {user && (
-            <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2">
               <button 
                 onClick={() => setIsDepositModalOpen(true)}
                 className="px-4 py-2 bg-[#FFD700] text-black font-black uppercase text-[10px] md:text-xs skew-x-[-12deg] cursor-pointer hover:bg-white transition-all shadow-[0_0_10px_rgba(255,215,0,0.2)]"
@@ -3719,6 +3818,84 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* Mobile Sub-Header: Fuel, Coin Dropdown, Deposit/Withdraw, and Quick Zoom */}
+      <div className="sm:hidden bg-[#141414] border-b border-zinc-800 px-3 py-2 flex items-center justify-between gap-2 z-20 sticky top-[68px]">
+        {user ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="leading-tight">
+              <span className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold block">{t.fuelBalance}</span>
+              <span className="text-xs font-mono font-black text-[#FFD700] truncate block">
+                {activeCoin === 'INR' ? '₹' : ''}
+                {coinBalances[activeCoin] > 0 ? (
+                  coinBalances[activeCoin].toLocaleString(undefined, { 
+                    minimumFractionDigits: activeCoin === 'INR' ? 0 : 2,
+                    maximumFractionDigits: activeCoin === 'INR' ? 2 : 4
+                  })
+                ) : '0'}
+                {activeCoin !== 'INR' ? ` ${activeCoin}` : ''}
+              </span>
+            </div>
+            <SearchableCoinDropdown coins={coins} activeCoin={activeCoin} onChange={handleCoinChange} />
+          </div>
+        ) : (
+          <button 
+            onClick={() => setShowAuthModal(true)}
+            className="flex items-center gap-1 text-[10px] bg-[#FFD700] text-black font-black px-2.5 py-1 rounded uppercase"
+          >
+            <LogIn className="w-3 h-3" /> Login
+          </button>
+        )}
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {user && (
+            <>
+              <button 
+                onClick={() => setIsDepositModalOpen(true)}
+                className="px-2 py-1 bg-[#FFD700] text-black font-black uppercase text-[9px] rounded hover:bg-white transition-all shadow-sm"
+              >
+                +Deposit
+              </button>
+              <button 
+                onClick={() => setIsWithdrawModalOpen(true)}
+                className="px-2 py-1 bg-zinc-800 text-zinc-200 font-black uppercase text-[9px] rounded border border-zinc-700"
+              >
+                Withdraw
+              </button>
+            </>
+          )}
+
+          {/* Quick Zoom for Mobile */}
+          <div className="flex items-center bg-black/80 border border-zinc-800 rounded px-1 py-0.5">
+            <button
+              type="button"
+              onClick={() => changeZoom(-10)}
+              disabled={uiZoom <= 70}
+              className="px-1 text-zinc-300 hover:text-[#FFD700] disabled:opacity-20 text-[11px] font-black"
+              title="Screen Chota (Zoom Out)"
+            >
+              -
+            </button>
+            <button
+              type="button"
+              onClick={resetZoom}
+              className="px-1 text-[9px] font-mono font-black text-[#FFD700]"
+              title="Reset Zoom"
+            >
+              {uiZoom}%
+            </button>
+            <button
+              type="button"
+              onClick={() => changeZoom(10)}
+              disabled={uiZoom >= 130}
+              className="px-1 text-zinc-300 hover:text-[#FFD700] disabled:opacity-20 text-[11px] font-black"
+              title="Screen Bada (Zoom In)"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Profile Modal */}
       <AnimatePresence>
@@ -4678,59 +4855,79 @@ export default function App() {
             </button>
           </motion.div>
         </div>
+      ) : activeGame === 'ludo' ? (
+        <LudoGame 
+          user={user}
+          activeCoin={activeCoin}
+          balance={coinBalances[activeCoin] || 0}
+          rates={rates}
+          onUpdateBalance={updateUserBalance}
+          onBackToBulletRide={() => setActiveGame('crash')}
+          isSoundMuted={isMuted}
+        />
       ) : (
         /* Main Gameplay Area */
-        <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        <main 
+          style={{ zoom: `${uiZoom}%` }}
+          className="flex-1 flex flex-col md:flex-row overflow-x-hidden md:overflow-hidden relative"
+        >
         
-        {/* Left Side Panel: History */}
-        <aside className="w-full md:w-72 border-r border-[#333] flex flex-col bg-[#141414] overflow-hidden shrink-0">
-          {/* Real-time Tabs */}
-          <div className="flex border-b border-[#333] bg-[#111]">
-            <button 
-              onClick={() => setHistoryTab('global')}
-              className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
-                historyTab === 'global' 
-                  ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
-                  : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
-              }`}
-            >
-              <History className="w-3 h-3" />
-              Pit Stops
-            </button>
-            <button 
-              onClick={() => setHistoryTab('personal')}
-              className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
-                historyTab === 'personal' 
-                  ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
-                  : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
-              }`}
-            >
-              <User className="w-3 h-3" />
-              My Rides
-            </button>
-            <button 
-              onClick={() => setHistoryTab('top')}
-              className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
-                historyTab === 'top' 
-                  ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
-                  : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
-              }`}
-            >
-              <Trophy className="w-3 h-3 text-[#FFD700]" />
-              Top Riders
-            </button>
-          </div>
-
-          <div 
-            className="flex-1 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800 p-4 h-[150px] md:h-full"
-            onTouchStart={(e) => {
-              // Allow scrolling only within this container
-              e.stopPropagation();
-            }}
-            onTouchMove={(e) => {
-                e.stopPropagation();
-            }}
+        {/* Left Side Panel: History (Placed below betting controls on mobile, sidebar on desktop) */}
+        <aside className="w-full md:w-72 border-t md:border-t-0 md:border-r border-[#333] flex flex-col bg-[#141414] overflow-hidden shrink-0 order-3 md:order-1">
+          {/* Mobile Accordion Toggle Header */}
+          <button 
+            type="button"
+            onClick={() => setIsHistoryExpandedMobile(prev => !prev)}
+            className="md:hidden flex items-center justify-between p-3.5 bg-[#111] border-b border-[#333] text-zinc-300 font-black text-xs uppercase tracking-wider cursor-pointer hover:bg-zinc-900 transition-colors w-full"
           >
+            <span className="flex items-center gap-2 text-[#FFD700]">
+              <History className="w-4 h-4 text-[#FFD700]" />
+              Pit Stops & Top Riders ({isHistoryExpandedMobile ? 'Hide ▲' : 'Show ▼'})
+            </span>
+            <ChevronDown className={`w-4 h-4 text-[#FFD700] transition-transform duration-200 ${isHistoryExpandedMobile ? 'rotate-180' : ''}`} />
+          </button>
+
+          <div className={`flex-col flex-1 overflow-hidden ${isHistoryExpandedMobile ? 'flex h-[360px] md:h-full' : 'hidden md:flex'}`}>
+            {/* Real-time Tabs */}
+            <div className="flex border-b border-[#333] bg-[#111]">
+              <button 
+                onClick={() => setHistoryTab('global')}
+                className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
+                  historyTab === 'global' 
+                    ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
+                    : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
+                }`}
+              >
+                <History className="w-3 h-3" />
+                Pit Stops
+              </button>
+              <button 
+                onClick={() => setHistoryTab('personal')}
+                className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
+                  historyTab === 'personal' 
+                    ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
+                    : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
+                }`}
+              >
+                <User className="w-3 h-3" />
+                My Rides
+              </button>
+              <button 
+                onClick={() => setHistoryTab('top')}
+                className={`flex-1 py-3 text-[9px] sm:text-[10px] font-black uppercase italic transition-all flex items-center justify-center gap-1 border-b-2 ${
+                  historyTab === 'top' 
+                    ? 'border-[#FFD700] text-[#FFD700] bg-black/40' 
+                    : 'border-transparent text-zinc-500 hover:text-zinc-400 hover:bg-[#181818]'
+                }`}
+              >
+                <Trophy className="w-3 h-3 text-[#FFD700]" />
+                Top Riders
+              </button>
+            </div>
+
+            <div 
+              className="flex-1 overflow-y-auto overscroll-contain touch-pan-y pr-2 scrollbar-thin scrollbar-thumb-zinc-800 p-4 h-[150px] md:h-full"
+            >
             <AnimatePresence initial={false} mode="popLayout">
               {historyTab === 'global' ? (
                 <motion.div
@@ -4886,14 +5083,15 @@ export default function App() {
               )}
             </AnimatePresence>
           </div>
+          </div>
           
           <div className="mt-auto hidden md:block p-4 bg-[#FFD700]/5 border border-[#FFD700]/20 rounded transition-all hover:bg-[#FFD700]/10">
             <p className="text-[11px] italic text-[#FFD700] leading-snug">"Don't ride faster than your guardian angel can fly."</p>
           </div>
         </aside>
 
-        {/* Central Visualization Area */}
-        <section className="flex-1 relative flex flex-col items-center justify-center bg-[#070707] p-8 min-h-[400px] overflow-hidden">
+        {/* Central Visualization Area (order-1 on mobile so it is at the top) */}
+        <section className="flex-1 relative flex flex-col items-center justify-center bg-[#070707] p-3 sm:p-6 md:p-8 min-h-[280px] sm:min-h-[350px] md:min-h-[400px] overflow-hidden order-1 md:order-2">
           {/* Moving Grid Background */}
           <motion.div 
             className="absolute inset-0 opacity-10 pointer-events-none" 
@@ -5249,8 +5447,8 @@ export default function App() {
           </div>
         </section>
 
-        {/* Right Side Panel: Controls */}
-        <aside className="w-full md:w-80 bg-[#1A1A1A] p-6 flex flex-col gap-6 border-l border-[#333] max-h-screen overflow-y-auto">
+        {/* Right Side Panel: Controls (order-2 on mobile right below bike canvas) */}
+        <aside className="w-full md:w-80 bg-[#1A1A1A] p-4 sm:p-6 flex flex-col gap-4 sm:gap-6 border-t md:border-t-0 md:border-l border-[#333] order-2 md:order-3 md:max-h-full md:overflow-y-auto">
           <div className="space-y-4">
             <div className="flex justify-between items-end mb-2">
               <label className="text-[10px] uppercase font-bold text-[#888]">Riding Stake</label>
@@ -5399,7 +5597,7 @@ export default function App() {
                     setHasActiveBet(false);
                     updateUserBalance(user.uid, coinBalances[activeCoin] + b, activeCoin);
                     setWithdrawableBalance(prev => prev + b);
-                    cancelActiveBetValue(user.uid, globalRoundIdRef.current);
+                    cancelActiveBetValue(user.uid, globalRoundIdRef.current || 'global');
                   } else {
                     // Place direct active bet right now
                     const b = betAmount;
@@ -5411,7 +5609,7 @@ export default function App() {
                     setHasActiveBet(true);
                     updateUserBalance(user.uid, coinBalances[activeCoin] - b, activeCoin);
                     setWithdrawableBalance(prev => Math.max(0, prev - b));
-                    registerActiveBetValue(user.uid, globalRoundIdRef.current, b, activeCoin);
+                    registerActiveBetValue(user.uid, globalRoundIdRef.current || 'global', b, activeCoin);
                   }
                 } else {
                   // CRASHED state, toggle next-round queue

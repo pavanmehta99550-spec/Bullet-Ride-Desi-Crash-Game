@@ -22,7 +22,6 @@ import {
   runTransaction
 } from "firebase/firestore";
 import { cryptoConfig } from "./src/lib/cryptoConfig";
-import fs from "fs";
 
 async function startServer() {
   const app = express();

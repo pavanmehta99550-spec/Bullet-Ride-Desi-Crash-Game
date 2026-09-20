@@ -1,6 +1,6 @@
 {
   "name": "Bullet Ride: Desi Crash Game",
-  "description": "A desi-themed crash game where players ride a Bullet and try to cash out before the inevitable crash happens, complete with funny Indian context crash reasons.",
+  "description": "A desi-themed crash and Shahi Chaupar Ludo game where players ride a Bullet or battle in royal Ludo with crypto and INR stakes.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
