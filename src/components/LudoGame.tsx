@@ -59,6 +59,7 @@ export default function LudoGame({
   const [selectedStake, setSelectedStake] = useState<number>(() => activeCoin === 'INR' ? 50 : 1);
   const [isMuted, setIsMuted] = useState(isSoundMuted);
   const [selectedAi, setSelectedAi] = useState(AI_BOTS[0]);
+  const [chessPieceType, setChessPieceType] = useState<'knight' | 'pawn' | 'king'>('knight');
 
   // Turn & Dice States
   const [activeTurn, setActiveTurn] = useState<LudoColor>('red');
@@ -824,6 +825,48 @@ export default function LudoGame({
             </button>
           </div>
 
+          {/* Chess Pieces (शतरंज गोटियाँ) Style Selector */}
+          <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-[#1E3A5F]/80">
+            <span className="text-[10px] font-black text-amber-300 uppercase flex items-center gap-1">
+              <span>♟️ Goti Style:</span>
+            </span>
+            <div className="flex items-center gap-1 bg-[#09182B] p-0.5 rounded-lg border border-[#1E3A5F]">
+              <button
+                onClick={() => setChessPieceType('knight')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all cursor-pointer ${
+                  chessPieceType === 'knight' 
+                    ? 'bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black shadow-md' 
+                    : 'text-zinc-300 hover:text-white'
+                }`}
+                title="Chess Knight / Horse Piece"
+              >
+                <span>♞ Horse (घोड़ा)</span>
+              </button>
+              <button
+                onClick={() => setChessPieceType('pawn')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all cursor-pointer ${
+                  chessPieceType === 'pawn' 
+                    ? 'bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black shadow-md' 
+                    : 'text-zinc-300 hover:text-white'
+                }`}
+                title="Chess Pawn / Pyada Piece"
+              >
+                <span>♟️ Pawn (प्यादा)</span>
+              </button>
+              <button
+                onClick={() => setChessPieceType('king')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all cursor-pointer ${
+                  chessPieceType === 'king' 
+                    ? 'bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black shadow-md' 
+                    : 'text-zinc-300 hover:text-white'
+                }`}
+                title="Chess King / Raja Piece"
+              >
+                <span>♚ King (राजा)</span>
+              </button>
+            </div>
+          </div>
+
         </div>
 
       </div>
@@ -948,42 +991,144 @@ export default function LudoGame({
     moveToken(token, diceRoll);
   }
 
-  // Render authentic Ludo King 3D Pawn with conical bowling-pin silhouette
+  // Render authentic Chess piece token (Knight / Pawn / King)
   function renderLudoKingPawn(color: LudoColor, isMovable: boolean = false) {
     const cfg = COLOR_CONFIG[color];
+    const gradId = `chess-grad-${color}`;
+    const goldGradId = `chess-gold-${color}`;
+
     return (
       <motion.div
         animate={isMovable ? { y: [0, -6, 0], scale: [1, 1.15, 1] } : {}}
         transition={isMovable ? { repeat: Infinity, duration: 0.6 } : {}}
         className="relative flex flex-col items-center justify-center cursor-pointer select-none"
       >
-        {/* Bouncing down arrow above movable pawn (Ludo King signature) */}
+        {/* Bouncing down arrow indicator for movable piece */}
         {isMovable && (
-          <div className="absolute -top-5 text-[10px] text-amber-300 animate-bounce pointer-events-none font-black drop-shadow">
+          <div className="absolute -top-5 text-[11px] text-amber-300 animate-bounce pointer-events-none font-black drop-shadow">
             ▼
           </div>
         )}
 
-        {/* 3D Pawn Body */}
-        <div className="relative w-5 h-6 sm:w-6 sm:h-7 flex flex-col items-center">
-          {/* Pawn Spherical Head */}
-          <div 
-            className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border border-white/90 shadow-md relative overflow-hidden"
-            style={{ backgroundColor: cfg.hex }}
-          >
-            {/* White specular reflection */}
-            <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white rounded-full opacity-80" />
-          </div>
-          {/* Pawn Conical Skirt Body */}
-          <div 
-            className="w-4 h-3.5 sm:w-5 sm:h-4.5 -mt-0.5 rounded-b-full border border-white/90 shadow-lg relative overflow-hidden"
-            style={{ 
-              backgroundColor: cfg.hex,
-              boxShadow: `0 3px 6px rgba(0,0,0,0.5)`
-            }}
-          >
-            <div className="absolute top-0 inset-x-0 h-1 bg-white/30" />
-          </div>
+        {/* Movable Golden Halo Ring */}
+        {isMovable && (
+          <div className="absolute inset-0 rounded-full ring-2 ring-[#FFD700] ring-offset-1 animate-pulse pointer-events-none" />
+        )}
+
+        {/* 3D Chess Piece Vector SVG */}
+        <div className="relative w-6 h-7 sm:w-7 sm:h-8 flex items-center justify-center filter drop-shadow-[0_3px_5px_rgba(0,0,0,0.6)]">
+          <svg viewBox="0 0 100 120" className="w-full h-full overflow-visible">
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.45" />
+                <stop offset="35%" stopColor={cfg.accent} />
+                <stop offset="75%" stopColor={cfg.hex} />
+                <stop offset="100%" stopColor={cfg.border} />
+              </linearGradient>
+              <linearGradient id={goldGradId} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#F59E0B" />
+                <stop offset="50%" stopColor="#FDE047" />
+                <stop offset="100%" stopColor="#D97706" />
+              </linearGradient>
+            </defs>
+
+            {chessPieceType === 'knight' && (
+              /* Staunton Chess Knight / Horse (घोड़ा) */
+              <g>
+                {/* Base Pedestal Bottom Tier */}
+                <rect x="16" y="104" width="68" height="11" rx="4" fill={cfg.border} />
+                <rect x="18" y="102" width="64" height="10" rx="3" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1.5" />
+                
+                {/* Gold Inlaid Accent Ring */}
+                <rect x="23" y="96" width="54" height="6" rx="2" fill={`url(#${goldGradId})`} stroke="#B45309" strokeWidth="0.8" />
+                
+                {/* Lower Pedestal Collar */}
+                <ellipse cx="50" cy="92" rx="28" ry="6" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1.5" />
+
+                {/* Horse Head & Chest Profile */}
+                <path
+                  d="M26,92 C26,76 33,62 36,52 C37,48 33,44 31,38 C29,32 33,24 41,21 C43,17 46,11 53,11 C57,11 58,15 56,19 C66,17 76,23 76,33 C76,39 72,45 68,49 C66,52 69,56 73,63 C77,71 75,83 75,92 Z"
+                  fill={`url(#${gradId})`}
+                  stroke="#ffffff"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+
+                {/* Carved Mane Grooves */}
+                <path d="M51,15 Q45,23 43,31 Q39,37 35,43" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" opacity="0.8" />
+
+                {/* White Alert Horse Eye */}
+                <circle cx="63" cy="29" r="3.5" fill="#ffffff" />
+                <circle cx="63.5" cy="29" r="2" fill="#000000" />
+                <circle cx="64.5" cy="28.5" r="0.8" fill="#ffffff" />
+
+                {/* Nostril */}
+                <ellipse cx="73" cy="41" rx="1.8" ry="2.6" fill="#000000" opacity="0.6" />
+
+                {/* Glossy Curved Muscle Sheen */}
+                <path d="M63,58 C66,68 65,78 66,88" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+              </g>
+            )}
+
+            {chessPieceType === 'pawn' && (
+              /* Staunton Chess Pawn (प्यादा) */
+              <g>
+                {/* Base Pedestal Bottom Tier */}
+                <rect x="18" y="104" width="64" height="11" rx="4" fill={cfg.border} />
+                <rect x="20" y="102" width="60" height="10" rx="3" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1.5" />
+
+                {/* Gold Rim Band */}
+                <rect x="25" y="96" width="50" height="6" rx="2" fill={`url(#${goldGradId})`} stroke="#B45309" strokeWidth="0.8" />
+                
+                {/* Flared Torso Bell */}
+                <path d="M30,96 C32,84 40,77 42,68 L58,68 C60,77 68,84 70,96 Z" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1.5" />
+
+                {/* Middle Gold Ring Collar */}
+                <ellipse cx="50" cy="67" rx="18" ry="5" fill={`url(#${goldGradId})`} stroke="#B45309" strokeWidth="1" />
+                <ellipse cx="50" cy="65" rx="16" ry="4" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1" />
+
+                {/* Slender Neck */}
+                <path d="M43,65 C43,56 44,50 45,46 L55,46 C56,50 57,56 57,65 Z" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1.2" />
+
+                {/* Top Collar */}
+                <ellipse cx="50" cy="46" rx="13" ry="3.5" fill={`url(#${goldGradId})`} stroke="#B45309" strokeWidth="0.8" />
+
+                {/* Spherical Head with Specular Gleam */}
+                <circle cx="50" cy="25" r="19" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="2" />
+                <ellipse cx="45" cy="19" rx="6" ry="3.5" fill="#ffffff" opacity="0.8" transform="rotate(-30 45 19)" />
+              </g>
+            )}
+
+            {chessPieceType === 'king' && (
+              /* Staunton Chess King / Crowned Raja (राजा) */
+              <g>
+                {/* Base Pedestal Bottom Tier */}
+                <rect x="18" y="104" width="64" height="11" rx="4" fill={cfg.border} />
+                <rect x="20" y="102" width="60" height="10" rx="3" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1.5" />
+                <rect x="25" y="96" width="50" height="6" rx="2" fill={`url(#${goldGradId})`} stroke="#B45309" strokeWidth="0.8" />
+
+                {/* Torso & Column */}
+                <path d="M28,96 C30,78 38,64 42,54 L58,54 C62,64 70,78 72,96 Z" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1.5" />
+                
+                {/* Waist Gold Belt with Jewel */}
+                <rect x="36" y="72" width="28" height="6" rx="2" fill={`url(#${goldGradId})`} stroke="#ffffff" strokeWidth="0.8" />
+                <circle cx="50" cy="75" r="1.8" fill="#EF4444" />
+
+                {/* Royal Collar */}
+                <ellipse cx="50" cy="54" rx="20" ry="5.5" fill={`url(#${goldGradId})`} stroke="#B45309" strokeWidth="1" />
+
+                {/* Crown Coronet Dome */}
+                <path d="M34,54 C32,40 38,32 44,30 L56,30 C62,32 68,40 66,54 Z" fill={`url(#${gradId})`} stroke="#ffffff" strokeWidth="1.5" />
+                
+                {/* Crown Filigree Gold Arc */}
+                <ellipse cx="50" cy="30" rx="14" ry="4" fill={`url(#${goldGradId})`} stroke="#B45309" strokeWidth="1" />
+
+                {/* Imperial Cross Finial on Crown */}
+                <path d="M50,13 L50,28 M43,19 L57,19" stroke={`url(#${goldGradId})`} strokeWidth="3.5" strokeLinecap="square" />
+                <path d="M50,13 L50,28 M43,19 L57,19" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="square" />
+              </g>
+            )}
+          </svg>
         </div>
       </motion.div>
     );
