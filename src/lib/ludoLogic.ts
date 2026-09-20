@@ -205,41 +205,46 @@ export const COLOR_CONFIG: Record<LudoColor, {
   bgGrad: string;
   accent: string;
   border: string;
+  baseBg: string;
 }> = {
   red: {
-    name: 'Red Royalty',
-    hindiName: 'लाल सुल्तान (Red)',
-    hex: '#EF4444',
-    glow: 'rgba(239, 68, 68, 0.4)',
-    bgGrad: 'from-red-950/80 via-red-900/40 to-black',
-    accent: '#F87171',
-    border: '#DC2626'
+    name: 'Red',
+    hindiName: 'लाल (Red)',
+    hex: '#E52521',
+    glow: 'rgba(229, 37, 33, 0.6)',
+    bgGrad: 'from-[#E52521] to-[#B71C1C]',
+    accent: '#FF5252',
+    border: '#B71C1C',
+    baseBg: '#E52521'
   },
   green: {
-    name: 'Emerald Nawab',
-    hindiName: 'हरा नवाब (Green)',
-    hex: '#10B981',
-    glow: 'rgba(16, 185, 129, 0.4)',
-    bgGrad: 'from-emerald-950/80 via-emerald-900/40 to-black',
-    accent: '#34D399',
-    border: '#059669'
+    name: 'Green',
+    hindiName: 'हरा (Green)',
+    hex: '#00A651',
+    glow: 'rgba(0, 166, 81, 0.6)',
+    bgGrad: 'from-[#00A651] to-[#007A3D]',
+    accent: '#2ECC71',
+    border: '#007A3D',
+    baseBg: '#00A651'
   },
   yellow: {
-    name: 'Amber Maharaja',
-    hindiName: 'पीला महाराजा (Yellow)',
-    hex: '#F59E0B',
-    glow: 'rgba(245, 158, 11, 0.4)',
-    bgGrad: 'from-amber-950/80 via-amber-900/40 to-black',
-    accent: '#FBBF24',
-    border: '#D97706'
+    name: 'Yellow',
+    hindiName: 'पीला (Yellow)',
+    hex: '#FFC000',
+    glow: 'rgba(255, 192, 0, 0.6)',
+    bgGrad: 'from-[#FFC000] to-[#E6A800]',
+    accent: '#FFE066',
+    border: '#CC9600',
+    baseBg: '#FFC000'
   },
   blue: {
-    name: 'Sapphire Shahi',
-    hindiName: 'नीला योद्धा (Blue)',
-    hex: '#3B82F6',
-    glow: 'rgba(59, 130, 246, 0.4)',
-    bgGrad: 'from-blue-950/80 via-blue-900/40 to-black',
-    accent: '#60A5FA',
-    border: '#2563EB'
+    name: 'Blue',
+    hindiName: 'नीला (Blue)',
+    hex: '#0070BA',
+    glow: 'rgba(0, 112, 186, 0.6)',
+    bgGrad: 'from-[#0070BA] to-[#004B87]',
+    accent: '#38B6FF',
+    border: '#004B87',
+    baseBg: '#0070BA'
   }
 };
