@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Volume2, VolumeX, ArrowLeft, Trophy, RotateCcw, 
   Swords, Users, Sparkles, MessageCircle, Smile, 
-  Check, ShieldAlert, Coins, HelpCircle, X
+  Check, ShieldAlert, Coins, HelpCircle, X, User
 } from 'lucide-react';
 import { 
   LudoColor, LudoToken, COLOR_CONFIG, TRACK_CELLS, 
@@ -22,6 +22,7 @@ interface LudoGameProps {
   onUpdateBalance: (userId: string, newBalance: number, coin: string) => void;
   onBackToBulletRide: () => void;
   isSoundMuted?: boolean;
+  onOpenProfile?: () => void;
 }
 
 type GameMode = 'vs_ai' | 'pass_and_play_2p' | 'pass_and_play_4p';
@@ -51,7 +52,8 @@ export default function LudoGame({
   rates,
   onUpdateBalance,
   onBackToBulletRide,
-  isSoundMuted = false
+  isSoundMuted = false,
+  onOpenProfile
 }: LudoGameProps) {
   // Game Setup
   const [gameMode, setGameMode] = useState<GameMode>('vs_ai');
@@ -518,8 +520,19 @@ export default function LudoGame({
           </div>
         </div>
 
-        {/* Right Tools: Chat & Sound */}
+        {/* Right Tools: Profile, Chat & Sound */}
         <div className="flex items-center gap-2">
+          {onOpenProfile && (
+            <button
+              onClick={onOpenProfile}
+              className="px-2.5 py-1.5 rounded-xl bg-[#FFD700] hover:bg-white text-black font-black text-xs uppercase shadow transition-colors flex items-center gap-1 cursor-pointer"
+              title="Aapka Profile (Your Profile)"
+            >
+              <User className="w-4 h-4" />
+              <span className="hidden sm:inline">Profile</span>
+            </button>
+          )}
+
           {/* Chat / Emojis Button */}
           <button
             onClick={() => setShowChatModal(true)}

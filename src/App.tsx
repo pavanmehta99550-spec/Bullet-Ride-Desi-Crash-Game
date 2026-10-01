@@ -694,7 +694,14 @@ export default function App() {
       if (firebaseUser) {
         const profile = await syncUserProfile(firebaseUser);
         if (!isCurrent) return;
-        setUser({ ...firebaseUser, ...profile });
+        const combinedUser = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || profile?.email || '',
+          displayName: profile?.displayName || firebaseUser.displayName || 'Rider',
+          photoURL: firebaseUser.photoURL || profile?.photoURL || null,
+          ...profile
+        };
+        setUser(combinedUser);
         if (profile) {
           const profileData = profile as any;
           const rawActiveCoin = profileData.activeCoin || 'USDT';
@@ -773,6 +780,13 @@ export default function App() {
       if (!isCurrent) return;
       if (doc.exists()) {
         const data = doc.data();
+        setUser((prev: any) => prev ? {
+          ...prev,
+          displayName: data.displayName || prev.displayName || 'Rider',
+          email: data.email || prev.email || '',
+          photoURL: data.photoURL || prev.photoURL || null,
+          ...data
+        } : prev);
         const rawActiveCoin = data.activeCoin || 'USDT';
         const curActiveCoin = rawActiveCoin === 'INR' ? 'USDT' : rawActiveCoin;
         const dBalances = data.coinBalances || {};
@@ -3768,6 +3782,15 @@ export default function App() {
                 <SearchableCoinDropdown coins={coins} activeCoin={activeCoin} onChange={handleCoinChange} />
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFD700]/10 hover:bg-[#FFD700] border border-[#FFD700]/40 text-[#FFD700] hover:text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+                  title="Profile dekhein"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Profile</span>
+                </button>
                 <div className="flex flex-col items-end">
                   <p className="text-xs md:text-sm font-black text-white italic uppercase tracking-tighter cursor-pointer hover:text-[#FFD700] transition-colors" onClick={() => setIsProfileModalOpen(true)}>{user.displayName}</p>
                   <button 
@@ -3780,7 +3803,8 @@ export default function App() {
                 </div>
                 <div 
                   onClick={() => setIsProfileModalOpen(true)}
-                  className="w-10 h-10 rounded-full border-2 border-[#FFD700]/30 overflow-hidden bg-zinc-800 flex items-center justify-center cursor-pointer hover:border-[#FFD700] transition-all hover:scale-105 active:scale-95"
+                  className="w-10 h-10 rounded-full border-2 border-[#FFD700]/30 overflow-hidden bg-zinc-800 flex items-center justify-center cursor-pointer hover:border-[#FFD700] transition-all hover:scale-105 active:scale-95 shrink-0"
+                  title="Click to view Profile"
                 >
                   {user.photoURL ? (
                     <img src={user.photoURL} alt="profile" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
@@ -3819,7 +3843,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Mobile Sub-Header: Fuel, Coin Dropdown, Deposit/Withdraw, and Quick Zoom */}
+      {/* Mobile Sub-Header: Fuel, Coin Dropdown, Profile, Deposit/Withdraw, and Quick Zoom */}
       <div className="sm:hidden bg-[#141414] border-b border-zinc-800 px-3 py-2 flex items-center justify-between gap-2 z-20 sticky top-[68px]">
         {user ? (
           <div className="flex items-center gap-2 min-w-0">
@@ -3850,9 +3874,18 @@ export default function App() {
         <div className="flex items-center gap-1.5 shrink-0">
           {user && (
             <>
+              <button
+                type="button"
+                onClick={() => setIsProfileModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#FFD700] text-black font-black uppercase text-[9px] rounded hover:bg-white transition-all shadow-sm shrink-0 cursor-pointer"
+                title="Open Profile"
+              >
+                <User className="w-3 h-3" />
+                <span>Profile</span>
+              </button>
               <button 
                 onClick={() => setIsDepositModalOpen(true)}
-                className="px-2 py-1 bg-[#FFD700] text-black font-black uppercase text-[9px] rounded hover:bg-white transition-all shadow-sm"
+                className="px-2 py-1 bg-zinc-800 text-zinc-200 font-black uppercase text-[9px] rounded border border-zinc-700"
               >
                 +Deposit
               </button>
@@ -4003,7 +4036,25 @@ export default function App() {
                         </button>
                       </div>
                     )}
-                    <p className="text-zinc-500 text-[10px] uppercase font-bold tracking-widest truncate">{user.email}</p>
+                    <p className="text-zinc-500 text-[10px] uppercase font-bold tracking-widest truncate">{user.email || 'No Email'}</p>
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <span className="text-[9px] font-mono text-zinc-400 bg-black/70 px-2 py-0.5 rounded border border-zinc-800 truncate select-all max-w-[190px]">
+                        UID: {user.uid}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            navigator.clipboard.writeText(user.uid);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          } catch (_) {}
+                        }}
+                        className="text-[8px] bg-[#FFD700] hover:bg-white text-black font-black uppercase px-2 py-0.5 rounded transition-all cursor-pointer"
+                      >
+                        {copied ? "Copied! ✓" : "Copy UID"}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -4864,6 +4915,7 @@ export default function App() {
           onUpdateBalance={updateUserBalance}
           onBackToBulletRide={() => setActiveGame('crash')}
           isSoundMuted={isMuted}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
         />
       ) : (
         /* Main Gameplay Area */

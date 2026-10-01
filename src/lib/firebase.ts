@@ -127,8 +127,9 @@ export async function syncUserProfile(user: any) {
       // New user registration
       const userData: any = {
         uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || 'Player',
+        email: user.email || '',
+        displayName: user.displayName || 'Rider',
+        photoURL: user.photoURL || null,
         walletBalance: 0, 
         coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 },
         activeCoin: 'USDT',
@@ -176,23 +177,30 @@ export async function syncUserProfile(user: any) {
     } else {
       const data = userDoc.data();
       
-      // Lazy migration: Ensure existing user doc has a referralCode
-      if (!data.referralCode || data.bonus_balance === undefined) {
-        const migration: any = {};
-        if (!data.referralCode) migration.referralCode = user.uid;
-        if (data.bonus_balance === undefined) migration.bonus_balance = 0;
-        if (data.has_deposited === undefined) migration.has_deposited = false;
-        
+      // Update photoURL or displayName if missing in doc but present in Auth user
+      const updates: any = {};
+      if (user.photoURL && !data.photoURL) updates.photoURL = user.photoURL;
+      if (user.email && !data.email) updates.email = user.email;
+      if (user.displayName && (!data.displayName || data.displayName === 'Player')) updates.displayName = user.displayName;
+      if (!data.referralCode) updates.referralCode = user.uid;
+      if (data.bonus_balance === undefined) updates.bonus_balance = 0;
+      if (data.has_deposited === undefined) updates.has_deposited = false;
+      
+      if (Object.keys(updates).length > 0) {
         try {
-          await setDoc(userRef, migration, { merge: true });
+          await setDoc(userRef, updates, { merge: true });
         } catch (_) {}
-        const updatedData = { ...data, ...migration };
-        localStorage.setItem(localKey, JSON.stringify(updatedData));
-        return updatedData;
       }
 
-      localStorage.setItem(localKey, JSON.stringify(data));
-      return data;
+      const mergedData = { 
+        photoURL: user.photoURL || data.photoURL || null,
+        email: user.email || data.email || '',
+        displayName: data.displayName || user.displayName || 'Rider',
+        ...data, 
+        ...updates 
+      };
+      localStorage.setItem(localKey, JSON.stringify(mergedData));
+      return mergedData;
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
@@ -201,22 +209,28 @@ export async function syncUserProfile(user: any) {
     const cached = localStorage.getItem(localKey);
     if (cached) {
       try {
-        return JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        return {
+          uid: user.uid,
+          email: user.email || parsed.email || '',
+          displayName: parsed.displayName || user.displayName || 'Rider',
+          photoURL: user.photoURL || parsed.photoURL || null,
+          ...parsed
+        };
       } catch (_) {}
     }
-    
-    // Clean safe default initial schema for sandboxed environments
     return {
       uid: user.uid,
-      email: user.email,
-      displayName: user.displayName || 'Player',
-      walletBalance: 50000,
-      coinBalances: { INR: 50000, BTC: 0.1, ETH: 1.5, USDT: 250, SOL: 12, DOGE: 500, LTC: 5, TRX: 100, BNB: 0.5, XRP: 500, MATIC: 300, TON: 50, ADA: 400, BCH: 1, DASH: 2, DGB: 1000, FEY: 200, LINK: 20, DOT: 30 },
+      email: user.email || '',
+      displayName: user.displayName || 'Rider',
+      photoURL: user.photoURL || null,
+      walletBalance: 0,
+      coinBalances: { INR: 0, BTC: 0, ETH: 0, USDT: 0, SOL: 0, DOGE: 0, LTC: 0, TRX: 0, BNB: 0, XRP: 0, MATIC: 0, TON: 0, ADA: 0, BCH: 0, DASH: 0, DGB: 0, FEY: 0, LINK: 0, DOT: 0 },
       activeCoin: 'USDT',
       bonus_balance: 0,
       has_deposited: false,
       referralCode: user.uid,
-      createdAt: Date.now(),
+      createdAt: Date.now()
     };
   }
 }
